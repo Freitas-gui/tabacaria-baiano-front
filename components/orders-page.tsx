@@ -14,7 +14,9 @@ import {
   CreditCard,
 } from "lucide-react";
 import Image from "next/image";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { useUser } from "@/contexts/user-context";
+import { API_BASE_URL } from "@/lib/api";
 
 interface OrderItem {
   id: string;
@@ -22,6 +24,7 @@ interface OrderItem {
   price: string;
   quantity: number;
   image: string;
+  pharmacyName?: string | null;
 }
 
 interface Order {
@@ -32,6 +35,7 @@ interface Order {
     | "Entregue"
     | "Saiu para entrega"
     | "Preparando"
+    | "Aguardando Confirmação"
     | "Confirmado"
     | "Cancelado";
   items: OrderItem[];
@@ -41,114 +45,176 @@ interface Order {
   estimatedDelivery?: string;
 }
 
-const mockOrders: Order[] = [
-  {
-    id: "1",
-    orderNumber: "CF-2024-001",
-    date: "2024-01-15",
-    status: "Entregue",
-    items: [
-      {
-        id: "1",
-        name: "Paracetamol 500mg 20 Comprimidos",
-        price: "8,90",
-        quantity: 2,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-      {
-        id: "2",
-        name: "Ibuprofeno 600mg 10 Comprimidos",
-        price: "15,90",
-        quantity: 1,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-    ],
-    total: "33,70",
-    deliveryAddress: "Rua das Flores, 123 - Centro, São Paulo - SP",
-    paymentMethod: "Cartão de Crédito",
-  },
-  {
-    id: "2",
-    orderNumber: "CF-2024-002",
-    date: "2024-01-20",
-    status: "Saiu para entrega",
-    items: [
-      {
-        id: "3",
-        name: "Creme para Pentear Elseve Liso dos Sonhos 250ml",
-        price: "17,94",
-        quantity: 1,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-      {
-        id: "4",
-        name: "Protetor Solar La Roche Posay FPS 60",
-        price: "89,90",
-        quantity: 1,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-    ],
-    total: "107,84",
-    deliveryAddress: "Av. Paulista, 456 - Bela Vista, São Paulo - SP",
-    paymentMethod: "PIX",
-    estimatedDelivery: "Hoje até 18:00",
-  },
-  {
-    id: "3",
-    orderNumber: "CF-2024-003",
-    date: "2024-01-22",
-    status: "Preparando",
-    items: [
-      {
-        id: "5",
-        name: "Whey Protein 900g",
-        price: "89,90",
-        quantity: 1,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-      {
-        id: "6",
-        name: "Óleo de Coco Extra Virgem 500ml",
-        price: "25,90",
-        quantity: 2,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-    ],
-    total: "141,70",
-    deliveryAddress: "Rua Augusta, 789 - Consolação, São Paulo - SP",
-    paymentMethod: "Cartão de Débito",
-    estimatedDelivery: "Amanhã até 16:00",
-  },
-  {
-    id: "4",
-    orderNumber: "CF-2024-004",
-    date: "2024-01-10",
-    status: "Confirmado",
-    items: [
-      {
-        id: "7",
-        name: "Glicosímetro Accu-Chek Active",
-        price: "45,90",
-        quantity: 1,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-      {
-        id: "8",
-        name: "Tiras Reagentes Glicemia 50un",
-        price: "89,90",
-        quantity: 1,
-        image: "/placeholder.svg?height=80&width=80",
-      },
-    ],
-    total: "135,80",
-    deliveryAddress: "Rua da Consolação, 321 - República, São Paulo - SP",
-    paymentMethod: "Boleto Bancário",
-    estimatedDelivery: "2-3 dias úteis",
-  },
-];
-
 export function OrdersPage() {
+  const { user } = useUser();
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
+
+  const mapStatus = (status: string): Order["status"] => {
+    if (!status) return "Aguardando Confirmação";
+    
+    const statusMap: Record<string, Order["status"]> = {
+      "Entregue": "Entregue",
+      "Saiu para entrega": "Saiu para entrega",
+      "Preparando": "Preparando",
+      "Aguardando Confirmação": "Aguardando Confirmação",
+      "Confirmado": "Confirmado",
+      "Cancelado": "Cancelado",
+      delivered: "Entregue",
+      in_transit: "Saiu para entrega",
+      preparing: "Preparando",
+      waiting_confirmation: "Aguardando Confirmação",
+      canceled: "Cancelado",
+    };
+    return statusMap[status] || "Aguardando Confirmação";
+  };
+
+  const getPaymentMethodLabel = (method: string): string => {
+    const paymentMap: Record<string, string> = {
+      credit: "Cartão de Crédito",
+      debit: "Cartão de Débito",
+      pix: "PIX",
+      boleto: "Boleto Bancário",
+      dinheiro: "Dinheiro",
+    };
+    return paymentMap[method] || method;
+  };
+
+  const loadOrders = useCallback(async () => {
+    if (!user || !user.accessToken) {
+      setLoading(false);
+      setError("Usuário não autenticado");
+      return;
+    }
+
+    try {
+      setLoading(true);
+      setError(null);
+
+      const response = await fetch(`${API_BASE_URL}/api/customer/orders`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar pedidos");
+      }
+
+      const data = await response.json();
+
+      if (data.success && Array.isArray(data.data)) {
+        const mappedOrders: Order[] = data.data.map((order: any) => {
+          const items: OrderItem[] = order.products?.map((product: any) => ({
+            id: product.id || product.product?.id || "",
+            name: product.product?.name || "Produto",
+            price: product.price || "0",
+            quantity: product.amount || 0,
+            image:
+              product.product?.images?.[0] ||
+              "/placeholder.svg?height=80&width=80",
+            pharmacyName: product.pharmacy?.name || order.pharmacy?.name || null,
+          })) || [];
+
+          const address = order.address;
+          const deliveryAddress = address
+            ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
+            : "Endereço não disponível";
+
+          return {
+            id: order.id,
+            orderNumber: order.code,
+            date: order.created_at,
+            status: mapStatus(order.status_label || order.status),
+            items,
+            total: order.total || "0",
+            deliveryAddress,
+            paymentMethod: getPaymentMethodLabel(order.payment_method),
+          };
+        });
+
+        setOrders(mappedOrders);
+      } else {
+        setOrders([]);
+      }
+    } catch (err) {
+      console.error("Error loading orders:", err);
+      setError("Erro ao carregar os pedidos. Tente novamente.");
+    } finally {
+      setLoading(false);
+    }
+  }, [user]);
+
+  useEffect(() => {
+    loadOrders();
+  }, [loadOrders]);
+
+  const fetchOrderDetails = async (orderId: string) => {
+    if (!user || !user.accessToken) {
+      alert("Usuário não autenticado");
+      return;
+    }
+
+    setLoadingOrderDetails(true);
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/customer/orders/${orderId}`, {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${user.accessToken}`,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error("Erro ao carregar detalhes do pedido");
+      }
+
+      const data = await response.json();
+
+      if (data.success && data.data) {
+        const order = data.data;
+        
+        const items: OrderItem[] = order.products?.map((product: any) => ({
+          id: product.id || product.product?.id || "",
+          name: product.product?.name || "Produto",
+          price: product.price || "0",
+          quantity: product.amount || 0,
+          image:
+            product.product?.images?.[0] ||
+            "/placeholder.svg?height=80&width=80",
+          pharmacyName: product.pharmacy?.name || order.pharmacy?.name || null,
+        })) || [];
+
+        const address = order.address;
+        const deliveryAddress = address
+          ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
+          : "Endereço não disponível";
+
+        const detailedOrder: Order = {
+          id: order.id,
+          orderNumber: order.code,
+          date: order.created_at,
+          status: mapStatus(order.status_label || order.status),
+          items,
+          total: order.total || "0",
+          deliveryAddress,
+          paymentMethod: getPaymentMethodLabel(order.payment_method),
+        };
+
+        setSelectedOrder(detailedOrder);
+      }
+    } catch (err) {
+      console.error("Error loading order details:", err);
+      alert("Erro ao carregar detalhes do pedido. Tente novamente.");
+    } finally {
+      setLoadingOrderDetails(false);
+    }
+  };
 
   const getStatusIcon = (status: Order["status"]) => {
     switch (status) {
@@ -158,8 +224,10 @@ export function OrdersPage() {
         return <Truck className="w-4 h-4 text-blue-600" />;
       case "Preparando":
         return <Package className="w-4 h-4 text-orange-600" />;
-      case "Confirmado":
+      case "Aguardando Confirmação":
         return <Clock className="w-4 h-4 text-yellow-600" />;
+      case "Confirmado":
+        return <CheckCircle className="w-4 h-4 text-blue-600" />;
       case "Cancelado":
         return <Clock className="w-4 h-4 text-red-600" />;
       default:
@@ -175,8 +243,10 @@ export function OrdersPage() {
         return "bg-blue-100 text-blue-800 border-blue-200";
       case "Preparando":
         return "bg-orange-100 text-orange-800 border-orange-200";
-      case "Confirmado":
+      case "Aguardando Confirmação":
         return "bg-yellow-100 text-yellow-800 border-yellow-200";
+      case "Confirmado":
+        return "bg-blue-100 text-blue-800 border-blue-200";
       case "Cancelado":
         return "bg-red-100 text-red-800 border-red-200";
       default:
@@ -193,23 +263,34 @@ export function OrdersPage() {
     });
   };
 
-  if (selectedOrder) {
+  if (loadingOrderDetails && !selectedOrder) {
     return (
       <div className="container mx-auto px-4 py-8">
-        <div className="mb-6">
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-theme-primary mx-auto"></div>
+          <p className="text-gray-600 mt-4">Carregando detalhes do pedido...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (selectedOrder) {
+    return (
+      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+        <div className="mb-4 sm:mb-6">
           <Button
             variant="outline"
             onClick={() => setSelectedOrder(null)}
-            className="mb-4"
+            className="mb-3 sm:mb-4 text-xs sm:text-sm"
           >
             ← Voltar aos Pedidos
           </Button>
-          <h1 className="text-3xl font-bold text-theme-primary">
+          <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary">
             Detalhes do Pedido
           </h1>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
           {/* Order Details */}
           <div className="lg:col-span-2">
             <Card className="mb-6">
@@ -238,21 +319,30 @@ export function OrdersPage() {
                   {selectedOrder.items.map((item, index) => (
                     <div key={item.id}>
                       <div className="flex items-center space-x-4">
-                        <Image
-                          src={item.image || "/placeholder.svg"}
-                          alt={item.name}
-                          width={80}
-                          height={80}
-                          className="rounded border"
-                        />
+                        <div className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden border">
+                          <Image
+                            src={item.image || "/placeholder.svg"}
+                            alt={item.name}
+                            width={80}
+                            height={80}
+                            className="w-20 h-20 object-contain p-1"
+                          />
+                        </div>
                         <div className="flex-1">
                           <h3 className="font-medium text-theme-primary">
                             {item.name}
                           </h3>
                           <div className="flex items-center justify-between mt-2">
-                            <span className="text-sm text-gray-600">
-                              Quantidade: {item.quantity}
-                            </span>
+                            <div className="flex flex-col">
+                              <span className="text-sm text-gray-600">
+                                Quantidade: {item.quantity}
+                              </span>
+                              {item.pharmacyName && (
+                                <span className="text-xs sm:text-sm text-theme-secondary mt-1">
+                                  Farmácia: {item.pharmacyName}
+                                </span>
+                              )}
+                            </div>
                             <span className="font-semibold text-theme-primary">
                               R$ {item.price}
                             </span>
@@ -321,91 +411,18 @@ export function OrdersPage() {
               </CardContent>
             </Card>
 
-            {/* Order Timeline */}
+            {/* Order Address */}
             <Card>
               <CardHeader>
-                <CardTitle className="text-theme-primary">
-                  Status do Pedido
+                <CardTitle className="text-theme-primary flex items-center">
+                  <MapPin className="w-5 h-5 mr-2" />
+                  Endereço do Pedido
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="space-y-4">
-                  <div
-                    className={`flex items-center space-x-3 ${
-                      selectedOrder.status === "Confirmado" ||
-                      selectedOrder.status === "Preparando" ||
-                      selectedOrder.status === "Saiu para entrega" ||
-                      selectedOrder.status === "Entregue"
-                        ? "text-green-600"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        selectedOrder.status === "Confirmado" ||
-                        selectedOrder.status === "Preparando" ||
-                        selectedOrder.status === "Saiu para entrega" ||
-                        selectedOrder.status === "Entregue"
-                          ? "bg-green-600"
-                          : "bg-gray-300"
-                      }`}
-                    ></div>
-                    <span className="text-sm">Pedido Confirmado</span>
-                  </div>
-                  <div
-                    className={`flex items-center space-x-3 ${
-                      selectedOrder.status === "Preparando" ||
-                      selectedOrder.status === "Saiu para entrega" ||
-                      selectedOrder.status === "Entregue"
-                        ? "text-green-600"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        selectedOrder.status === "Preparando" ||
-                        selectedOrder.status === "Saiu para entrega" ||
-                        selectedOrder.status === "Entregue"
-                          ? "bg-green-600"
-                          : "bg-gray-300"
-                      }`}
-                    ></div>
-                    <span className="text-sm">Preparando Pedido</span>
-                  </div>
-                  <div
-                    className={`flex items-center space-x-3 ${
-                      selectedOrder.status === "Saiu para entrega" ||
-                      selectedOrder.status === "Entregue"
-                        ? "text-green-600"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        selectedOrder.status === "Saiu para entrega" ||
-                        selectedOrder.status === "Entregue"
-                          ? "bg-green-600"
-                          : "bg-gray-300"
-                      }`}
-                    ></div>
-                    <span className="text-sm">Saiu para Entrega</span>
-                  </div>
-                  <div
-                    className={`flex items-center space-x-3 ${
-                      selectedOrder.status === "Entregue"
-                        ? "text-green-600"
-                        : "text-gray-400"
-                    }`}
-                  >
-                    <div
-                      className={`w-3 h-3 rounded-full ${
-                        selectedOrder.status === "Entregue"
-                          ? "bg-green-600"
-                          : "bg-gray-300"
-                      }`}
-                    ></div>
-                    <span className="text-sm">Entregue</span>
-                  </div>
+                <div className="flex items-start space-x-2">
+                  <MapPin className="w-4 h-4 text-theme-secondary mt-0.5" />
+                  <span className="text-sm">{selectedOrder.deliveryAddress}</span>
                 </div>
               </CardContent>
             </Card>
@@ -416,15 +433,35 @@ export function OrdersPage() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="mb-8">
-        <h1 className="text-3xl font-bold text-theme-primary mb-2">
+    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+      <div className="mb-6 sm:mb-8">
+        <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary mb-2">
           Meus Pedidos
         </h1>
-        <p className="text-gray-600">Acompanhe o status dos seus pedidos</p>
+        <p className="text-sm sm:text-base text-gray-600">Acompanhe o status dos seus pedidos</p>
       </div>
 
-      {mockOrders.length === 0 ? (
+      {loading ? (
+        <Card className="text-center py-12">
+          <CardContent>
+            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-theme-primary mx-auto"></div>
+            <p className="text-gray-600 mt-4">Carregando pedidos...</p>
+          </CardContent>
+        </Card>
+      ) : error ? (
+        <Card className="text-center py-12">
+          <CardContent>
+            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <h3 className="text-lg font-semibold text-theme-primary mb-2">
+              Erro ao carregar pedidos
+            </h3>
+            <p className="text-gray-500 mb-6">{error}</p>
+            <Button onClick={() => loadOrders()} className="btn-theme-primary">
+              Tentar Novamente
+            </Button>
+          </CardContent>
+        </Card>
+      ) : orders.length === 0 ? (
         <Card className="text-center py-12">
           <CardContent>
             <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
@@ -438,26 +475,26 @@ export function OrdersPage() {
           </CardContent>
         </Card>
       ) : (
-        <div className="space-y-4">
-          {mockOrders.map((order) => (
+        <div className="space-y-3 sm:space-y-4">
+          {orders.map((order) => (
             <Card
               key={order.id}
-              className="card-hover transition-shadow" // cursor-pointer"
-              //onClick={() => setSelectedOrder(order)}
+              className="card-hover transition-shadow cursor-pointer"
+              onClick={() => fetchOrderDetails(order.id)}
             >
-              <CardContent className="p-6">
-                <div className="flex items-center justify-between mb-4">
-                  <div>
-                    <h3 className="font-semibold text-theme-primary">
+              <CardContent className="p-3 sm:p-6">
+                <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-3 sm:mb-4">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-sm sm:text-base text-theme-primary">
                       Pedido {order.orderNumber}
                     </h3>
-                    <div className="flex items-center space-x-4 text-sm text-gray-600 mt-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600 mt-1">
                       <div className="flex items-center space-x-1">
-                        <Calendar className="w-4 h-4" />
+                        <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
                         <span>{formatDate(order.date)}</span>
                       </div>
                       <div className="flex items-center space-x-1">
-                        <Package className="w-4 h-4" />
+                        <Package className="w-3 h-3 sm:w-4 sm:h-4" />
                         <span>
                           {order.items.length}{" "}
                           {order.items.length === 1 ? "item" : "itens"}
@@ -465,33 +502,33 @@ export function OrdersPage() {
                       </div>
                     </div>
                   </div>
-                  <div className="text-right">
+                  <div className="text-left sm:text-right">
                     <Badge
-                      className={`${getStatusColor(order.status)} border mb-2`}
+                      className={`${getStatusColor(order.status)} border mb-2 text-xs`}
                     >
                       <div className="flex items-center space-x-1">
                         {getStatusIcon(order.status)}
-                        <span>{order.status}</span>
+                        <span className="text-xs">{order.status}</span>
                       </div>
                     </Badge>
-                    <div className="text-lg font-bold text-theme-primary">
+                    <div className="text-base sm:text-lg font-bold text-theme-primary">
                       R$ {order.total}
                     </div>
                   </div>
                 </div>
 
-                <div className="flex items-center space-x-4 mb-4">
+                <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
                   {order.items.slice(0, 3).map((item, index) => (
-                    <div key={item.id} className="flex items-center space-x-2">
+                    <div key={item.id} className="flex items-center space-x-2 flex-shrink-0">
                       <Image
                         src={item.image || "/placeholder.svg"}
                         alt={item.name}
                         width={40}
                         height={40}
-                        className="rounded border"
+                        className="rounded border w-8 h-8 sm:w-10 sm:h-10 object-cover"
                       />
                       <div className="text-xs text-gray-600">
-                        <div className="font-medium truncate max-w-[120px]">
+                        <div className="font-medium truncate max-w-[100px] sm:max-w-[120px]">
                           {item.name}
                         </div>
                         <div>Qtd: {item.quantity}</div>
@@ -499,7 +536,7 @@ export function OrdersPage() {
                     </div>
                   ))}
                   {order.items.length > 3 && (
-                    <div className="text-sm text-gray-500">
+                    <div className="text-xs sm:text-sm text-gray-500">
                       +{order.items.length - 3}{" "}
                       {order.items.length - 3 === 1 ? "item" : "itens"}
                     </div>
@@ -507,15 +544,15 @@ export function OrdersPage() {
                 </div>
 
                 {order.estimatedDelivery && (
-                  <div className="flex items-center space-x-2 text-sm text-theme-secondary">
-                    <Clock className="w-4 h-4" />
-                    <span>Previsão de entrega: {order.estimatedDelivery}</span>
+                  <div className="flex items-center space-x-2 text-xs sm:text-sm text-theme-secondary mb-2">
+                    <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
+                    <span className="break-words">Previsão de entrega: {order.estimatedDelivery}</span>
                   </div>
                 )}
 
-                <div className="flex items-center space-x-2 text-sm text-gray-600 mt-4 pt-4 border-t">
-                  <MapPin className="w-4 h-4" />
-                  <span className="truncate max-w-[400px]">
+                <div className="flex items-start space-x-2 text-xs sm:text-sm text-gray-600 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+                  <MapPin className="w-3 h-3 sm:w-4 sm:h-4 mt-0.5 flex-shrink-0" />
+                  <span className="break-words">
                     {order.deliveryAddress}
                   </span>
                 </div>

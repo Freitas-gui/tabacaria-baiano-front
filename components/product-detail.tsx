@@ -1,235 +1,525 @@
 "use client";
 import { useCart } from "@/contexts/cart-context";
 import { useRouter } from "next/navigation";
-import { Star } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import Image from "next/image";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
+import { API_BASE_URL } from "@/lib/api";
+
+// ---- Types ----
+type Pharmacy = {
+  id: string;
+  name: string;
+  price: string;
+  stock: number;
+  pharmacyProductId: string;
+};
+
+type Product = {
+  id: string;
+  pharmacyProductId?: string | null;
+  reference: string | null;
+  name: string;
+  description: string | null;
+  price: string | null;
+  category: string | null;
+  image: string | null;
+  additionalImages: string[];
+  keywords?: string[];
+};
 
 // Default product as fallback
-const defaultProduct = {
+const defaultProduct: Product & {
+  originalPrice?: string;
+} = {
   id: "creme-elseve-liso-250ml",
-  name: "Creme para Pentear Elseve Liso dos Sonhos 250ml",
-  price: "17,94",
+  name: "",
+  price: "",
   originalPrice: "21,90",
   image: "/placeholder.svg?height=400&width=400",
-  additionalImages: [
-    "/placeholder.svg?height=400&width=400&text=Image+2",
-    "/placeholder.svg?height=400&width=400&text=Image+3",
-  ],
+  additionalImages: [],
   reference: "7509785461900",
-  category: "Cabelos",
+  category: "",
+  description: null,
 };
 
 export function ProductDetail() {
-  const { addToCart } = useCart();
+  const { addToCart, items } = useCart();
   const router = useRouter();
-  const [product, setProduct] = useState(defaultProduct);
+
+  const [product, setProduct] = useState<Product>(defaultProduct);
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [otherPharmacies, setOtherPharmacies] = useState<Pharmacy[]>([]);
+  const [loadingOtherPharmacies, setLoadingOtherPharmacies] = useState(false);
+  const [currentPharmacy, setCurrentPharmacy] = useState<{ name: string; stock: number } | null>(null);
+  const [loadingProductDetail, setLoadingProductDetail] = useState(false);
+
+  // ---- Products from API ----
+  const [products, setProducts] = useState<Product[]>([]);
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [productsError, setProductsError] = useState<string | null>(null);
+
+  const loadProducts = useCallback(async (signal?: AbortSignal) => {
+    try {
+      setLoadingProducts(true);
+      setProductsError(null);
+
+      const res = await fetch(`${API_BASE_URL}/api/product`, {
+        signal,
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const json = await res.json();
+      const data = Array.isArray(json?.data) ? json.data : [];
+
+      const normalized: Product[] = data
+        .map((p: any) => {
+          // A API tem "iamage" (typo) e pode ter "image". Vamos suportar ambos.
+          const rawImages =
+            (Array.isArray(p?.image) && p.image) ||
+            (Array.isArray(p?.iamage) && p.iamage) ||
+            [];
+
+          // Aceita string[] ou [{url: "..."}]
+          const imgs: string[] = rawImages
+            .map((it: any) =>
+              typeof it === "string"
+                ? it
+                : typeof it?.url === "string"
+                ? it.url
+                : null
+            )
+            .filter(Boolean) as string[];
+
+          const normalizedProduct: Product = {
+            id: String(p?.id ?? ""),
+            pharmacyProductId: p?.pharmacyProductId ? String(p.pharmacyProductId) : null,
+            reference: p?.reference ? String(p.reference) : null,
+            name: String(p?.name ?? "").trim(),
+            description: p?.description ? String(p.description) : null,
+            price:
+              p?.price === null || p?.price === undefined
+                ? null
+                : String(p.price), // manter string (ex: "15.5")
+            category: p?.category ? String(p.category) : null,
+            image: imgs.length > 0 ? imgs[0] : null,
+            additionalImages: imgs.slice(1),
+            keywords: Array.isArray(p?.keywords) ? p.keywords : [],
+          } as Product;
+          
+          return normalizedProduct;
+        })
+        .filter((p: Product) => p.id && p.name);
+
+      setProducts(normalized);
+    } catch (e: any) {
+      // Silenciar erro conforme seu exemplo; se quiser exibir, descomente:
+      // setProductsError("Não foi possível carregar os produtos. Tente novamente.");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }, []);
+
+  const loadProductDetail = useCallback(async (pharmacyProductId: string) => {
+    if (!pharmacyProductId) {
+      console.log("loadProductDetail: No pharmacyProductId provided");
+      return;
+    }
+
+    try {
+      setLoadingProductDetail(true);
+      const url = `${API_BASE_URL}/api/product/show/${pharmacyProductId}`;
+      console.log("Loading product detail from:", url);
+      
+      const res = await fetch(url);
+      
+      if (res.status === 204) {
+        console.log("Product not found (204)");
+        setOtherPharmacies([]);
+        setCurrentPharmacy(null);
+        return;
+      }
+      
+      if (!res.ok) {
+        console.error("Error response:", res.status, res.statusText);
+        setOtherPharmacies([]);
+        setCurrentPharmacy(null);
+        return;
+      }
+
+      const json = await res.json();
+      console.log("Product detail API response:", json);
+      const data = json.data || json;
+      
+      if (data) {
+        if (data.pharmacy) {
+          setCurrentPharmacy({
+            name: data.pharmacy.name,
+            stock: data.stock || 0,
+          });
+        }
+        
+        if (Array.isArray(data.otherPharmacies)) {
+          console.log("Found other pharmacies:", data.otherPharmacies.length);
+          setOtherPharmacies(data.otherPharmacies);
+        } else {
+          console.log("No other pharmacies array found");
+          setOtherPharmacies([]);
+        }
+
+        if (data.price) {
+          setProduct((prev) => ({
+            ...prev,
+            price: data.price,
+            pharmacyProductId: data.pharmacyProductId || pharmacyProductId,
+          }));
+        }
+
+        if (data.images && Array.isArray(data.images) && data.images.length > 0) {
+          setProduct((prev) => ({
+            ...prev,
+            image: data.images[0],
+            additionalImages: data.images.slice(1),
+          }));
+        }
+      }
+    } catch (error) {
+      console.error("Error loading product detail:", error);
+      setOtherPharmacies([]);
+      setCurrentPharmacy(null);
+    } finally {
+      setLoadingProductDetail(false);
+    }
+  }, []);
+
+  const loadOtherPharmacies = useCallback(async (pharmacyProductId: string) => {
+    if (!pharmacyProductId) return;
+
+    try {
+      setLoadingOtherPharmacies(true);
+      const res = await fetch(`${API_BASE_URL}/api/product/show/${pharmacyProductId}`);
+      
+      if (!res.ok || res.status === 204) {
+        setOtherPharmacies([]);
+        return;
+      }
+
+      const json = await res.json();
+      const data = json.data || json;
+      
+      if (data && Array.isArray(data.otherPharmacies)) {
+        setOtherPharmacies(data.otherPharmacies);
+      } else {
+        setOtherPharmacies([]);
+      }
+    } catch (error) {
+      console.error("Error loading other pharmacies:", error);
+      setOtherPharmacies([]);
+    } finally {
+      setLoadingOtherPharmacies(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    loadProducts(ac.signal);
+    return () => ac.abort();
+  }, [loadProducts]);
+
+  const handlePharmacyClick = (pharmacyProductId: string) => {
+    if (pharmacyProductId) {
+      localStorage.setItem("selectedProduct", JSON.stringify({
+        ...product,
+        pharmacyProductId: pharmacyProductId,
+      }));
+      router.push("/produto");
+      window.location.reload();
+    }
+  };
 
   // Create dynamic product images array based on product data
-  const productImages = [
-    product.image || "/placeholder.svg?height=400&width=400",
-    ...(product.additionalImages || []),
-  ];
+  const productImages = useMemo(
+    () => [
+      product.image || "/placeholder.svg?height=400&width=400",
+      ...(product.additionalImages || []),
+    ],
+    [product.image, product.additionalImages]
+  );
 
   // Load product data from localStorage when component mounts and scroll to top
   useEffect(() => {
-    // Scroll to top of page
     window.scrollTo(0, 0);
 
     const selectedProduct = localStorage.getItem("selectedProduct");
     if (selectedProduct) {
       try {
         const productData = JSON.parse(selectedProduct);
-        setProduct(productData);
-        // Reset selected image index when product changes
+        console.log("Product data from localStorage:", productData);
+        const productDataParsed: Product = {
+          id: String(productData?.id ?? ""),
+          pharmacyProductId: productData?.pharmacyProductId ? String(productData.pharmacyProductId) : null,
+          reference: productData?.reference ?? null,
+          name: String(productData?.name ?? "").trim(),
+          description: productData?.description ?? null,
+          price:
+            productData?.price === null || productData?.price === undefined
+              ? null
+              : String(productData.price),
+          category: productData?.category ?? null,
+          image: productData?.image ?? null,
+          additionalImages: Array.isArray(productData?.additionalImages)
+            ? productData.additionalImages
+            : [],
+          keywords: Array.isArray(productData?.keywords)
+            ? productData.keywords
+            : [],
+        };
+        console.log("Parsed product with pharmacyProductId:", productDataParsed.pharmacyProductId);
+        setProduct(productDataParsed);
         setSelectedImageIndex(0);
+        
+        if (productDataParsed.pharmacyProductId) {
+          console.log("Immediately loading product detail for:", productDataParsed.pharmacyProductId);
+          loadProductDetail(productDataParsed.pharmacyProductId);
+        }
       } catch (error) {
         console.error("Error parsing product data:", error);
-        // Keep default product if parsing fails
       }
+    } else {
+      console.log("No product found in localStorage");
     }
-  }, []);
+  }, [loadProductDetail]);
+
+  // Load product details and other pharmacies when product has pharmacyProductId (backup)
+  useEffect(() => {
+    console.log("Product pharmacyProductId changed:", product.pharmacyProductId);
+    if (product.pharmacyProductId && !loadingProductDetail) {
+      console.log("Loading product detail for:", product.pharmacyProductId);
+      loadProductDetail(product.pharmacyProductId);
+    } else if (!product.pharmacyProductId) {
+      console.log("No pharmacyProductId available, skipping load");
+    }
+  }, [product.pharmacyProductId]);
 
   const handleAddToCart = () => {
+    if (currentPharmacy && currentPharmacy.stock !== undefined && currentPharmacy.stock <= 0) {
+      router.push("/checkout");
+      return;
+    }
+
+    const availableStock = currentPharmacy?.stock ?? null;
+    if (availableStock !== null && availableStock !== undefined) {
+      const existingItem = items.find((item) => 
+        item.pharmacyProductId === product.pharmacyProductId
+      );
+
+      if (existingItem) {
+        const currentQuantity = existingItem.quantity;
+        if (currentQuantity >= availableStock) {
+          router.push("/checkout");
+          return;
+        }
+      }
+    }
+
     addToCart({
-      id: `${product.id}-${Date.now()}`, // Unique ID for each cart addition
+      id: `${product.id}-${Date.now()}`,
       name: product.name,
-      price: product.price,
+      price: product.price ?? "",
       image: product.image || "/placeholder.svg?height=400&width=400",
+      pharmacyProductId: product.pharmacyProductId || null,
+      pharmacyName: currentPharmacy?.name || null,
+      stock: currentPharmacy?.stock ?? null,
     });
   };
 
   const handleBuyNow = () => {
-    // Add product to cart first
+    if (currentPharmacy && currentPharmacy.stock !== undefined && currentPharmacy.stock <= 0) {
+      router.push("/checkout");
+      return;
+    }
+
+    const availableStock = currentPharmacy?.stock ?? null;
+    if (availableStock !== null && availableStock !== undefined) {
+      const existingItem = items.find((item) => 
+        item.pharmacyProductId === product.pharmacyProductId
+      );
+
+      if (existingItem) {
+        const currentQuantity = existingItem.quantity;
+        if (currentQuantity >= availableStock) {
+          router.push("/checkout");
+          return;
+        }
+      }
+    }
+
     addToCart({
-      id: `${product.id}-${Date.now()}`, // Unique ID for each cart addition
+      id: `${product.id}-${Date.now()}`,
       name: product.name,
-      price: product.price,
+      price: product.price ?? "",
       image: product.image || "/placeholder.svg?height=400&width=400",
+      pharmacyProductId: product.pharmacyProductId || null,
+      pharmacyName: currentPharmacy?.name || null,
+      stock: currentPharmacy?.stock ?? null,
     });
-    // Then redirect to checkout
     router.push("/checkout");
   };
 
-  const handleRelatedProductClick = (relatedProduct: any) => {
-    // Save related product to localStorage
+  const handleRelatedProductClick = (relatedProduct: Product) => {
     localStorage.setItem("selectedProduct", JSON.stringify(relatedProduct));
-    // Update state so UI updates immediately
     setProduct(relatedProduct);
     setSelectedImageIndex(0);
-    // Redirect to product detail page
     router.push("/produto");
-    // Scroll to top of page
     window.scrollTo(0, 0);
   };
 
-  // Generate product description based on the product
-  const getProductDescription = () => {
-    if (product.name.toLowerCase().includes("paracetamol")) {
-      return {
-        description:
-          "O Paracetamol é um analgésico e antitérmico amplamente utilizado para o alívio da dor e redução da febre. Sua fórmula eficaz proporciona alívio rápido e seguro para dores de cabeça, dores musculares, dores nas costas e febre.",
-        benefits: [
-          "Alívio rápido da dor",
-          "Redução eficaz da febre",
-          "Seguro para uso regular",
-          "Bem tolerado pelo organismo",
-        ],
-        usage:
-          "Adultos: 1 a 2 comprimidos a cada 6 horas, não excedendo 8 comprimidos em 24 horas. Crianças: conforme orientação médica.",
-      };
-    } else if (product.name.toLowerCase().includes("ibuprofeno")) {
-      return {
-        description:
-          "O Ibuprofeno é um anti-inflamatório não esteroidal (AINE) que combate a dor, inflamação e febre. Ideal para dores musculares, articulares e inflamações em geral.",
-        benefits: [
-          "Ação anti-inflamatória",
-          "Alívio da dor intensa",
-          "Redução do inchaço",
-          "Efeito duradouro",
-        ],
-        usage:
-          "Adultos: 1 comprimido a cada 8 horas, preferencialmente após as refeições. Não exceder 3 comprimidos por dia.",
-      };
-    } else if (product.name.toLowerCase().includes("whey")) {
-      return {
-        description:
-          "Whey Protein de alta qualidade, ideal para quem busca aumentar a massa muscular e melhorar o desempenho nos treinos. Rico em aminoácidos essenciais e de rápida absorção.",
-        benefits: [
-          "Aumento da massa muscular",
-          "Recuperação pós-treino",
-          "Rico em aminoácidos",
-          "Fácil digestão",
-        ],
-        usage:
-          "Misture 1 dose (30g) com 200ml de água ou leite. Consuma após o treino ou conforme orientação nutricional.",
-      };
-    } else {
-      return {
-        description: `${product.name} é um produto de alta qualidade desenvolvido para atender suas necessidades específicas. Formulado com ingredientes selecionados para proporcionar os melhores resultados.`,
-        benefits: [
-          "Qualidade garantida",
-          "Fórmula eficaz",
-          "Resultados comprovados",
-          "Seguro para uso",
-        ],
-        usage:
-          "Siga as instruções da embalagem ou orientação profissional para uso adequado do produto.",
-      };
-    }
-  };
-
-  const productInfo = getProductDescription();
+  // Related products: same category, not the current product
+  const relatedProducts = useMemo(() => {
+    if (!product?.category) return [];
+    return products.filter(
+      (p) => p.category === product.category && p.id !== product.id
+    );
+  }, [products, product]);
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-        {/* Product Images - Only show if there are images */}
-
-        <div className="lg:col-span-2">
-          <div className="space-y-2">
-            {productImages.map((imageUrl, index) => (
-              <div
-                key={index}
-                className={`border rounded p-2 cursor-pointer transition-all ${
-                  selectedImageIndex === index
-                    ? "border-theme-secondary ring-2 ring-theme-secondary"
-                    : "border-gray-300 hover:border-theme-secondary"
-                }`}
-                onClick={() => setSelectedImageIndex(index)}
-              >
-                <Image
-                  src={imageUrl || "/placeholder.svg"}
-                  alt={`Product thumbnail ${index + 1}`}
-                  width={60}
-                  height={60}
-                  className="w-full h-auto"
-                />
-              </div>
-            ))}
+    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8">
+        {/* Thumbnails - Hidden on mobile, shown on desktop */}
+        {productImages.length > 1 && (
+          <div className="hidden lg:block lg:col-span-2">
+            <div className="space-y-2">
+              {productImages.map((imageUrl, index) => (
+                <div
+                  key={index}
+                  className={`border rounded p-2 cursor-pointer transition-all aspect-square bg-gray-50 overflow-hidden ${
+                    selectedImageIndex === index
+                      ? "border-theme-secondary ring-2 ring-theme-secondary"
+                      : "border-gray-300 hover:border-theme-secondary"
+                  }`}
+                  onClick={() => setSelectedImageIndex(index)}
+                >
+                  <Image
+                    src={imageUrl || "/placeholder.svg"}
+                    alt={`Product thumbnail ${index + 1}`}
+                    width={60}
+                    height={60}
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
-        {/* Main Product Image */}
-        <div
-          className={
-            productImages.length > 1 ? "lg:col-span-5" : "lg:col-span-5"
-          }
-        >
-          <div className="relative">
+        {/* Thumbnails - Horizontal scroll on mobile */}
+        {productImages.length > 1 && (
+          <div className="lg:hidden mb-4">
+            <div className="flex space-x-2 overflow-x-auto pb-2">
+              {productImages.map((imageUrl, index) => (
+                <div
+                  key={index}
+                  className={`border rounded p-1 cursor-pointer transition-all flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-gray-50 overflow-hidden ${
+                    selectedImageIndex === index
+                      ? "border-theme-secondary ring-2 ring-theme-secondary"
+                      : "border-gray-300 hover:border-theme-secondary"
+                  }`}
+                  onClick={() => setSelectedImageIndex(index)}
+                >
+                  <Image
+                    src={imageUrl || "/placeholder.svg"}
+                    alt={`Product thumbnail ${index + 1}`}
+                    width={80}
+                    height={80}
+                    className="w-full h-full object-contain"
+                  />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Main Image */}
+        <div className={productImages.length > 1 ? "lg:col-span-5" : "lg:col-span-7"}>
+          <div className="relative aspect-square bg-gray-50 rounded overflow-hidden max-w-sm mx-auto lg:max-w-none">
             <Image
               src={productImages[selectedImageIndex] || "/placeholder.svg"}
               alt={product.name}
               width={400}
-              height={500}
-              className="w-full h-auto"
+              height={400}
+              className="w-full h-full object-contain p-2 sm:p-4"
             />
-            {/* Image counter */}
             {productImages.length > 1 && (
-              <div className="absolute bottom-4 right-4 bg-black bg-opacity-70 text-white text-sm px-3 py-1 rounded">
+              <div className="absolute bottom-2 sm:bottom-4 right-2 sm:right-4 bg-black bg-opacity-70 text-white text-xs sm:text-sm px-2 sm:px-3 py-1 rounded">
                 {selectedImageIndex + 1} / {productImages.length}
               </div>
             )}
           </div>
         </div>
 
-        {/* Product Info */}
+        {/* Info */}
         <div className="lg:col-span-5">
-          <div className="space-y-4">
-            <div className="flex items-center space-x-2 text-sm text-gray-500">
+          <div className="space-y-3 sm:space-y-4">
+            <div className="flex items-center space-x-2 text-xs sm:text-sm text-gray-500">
               <span>Voltar</span>
               <span>|</span>
               <span className="text-theme-secondary">{product.category}</span>
             </div>
 
-            <div className="text-sm text-gray-500">
-              Referência: {product.reference}
-            </div>
-
-            <h1 className="text-2xl font-semibold text-theme-primary">
+            <h1 className="text-xl sm:text-2xl font-semibold text-theme-primary">
               {product.name}
             </h1>
 
-            <div className="bg-theme-primary p-4 rounded border">
-              <div className="text-sm text-theme-primary mb-2">
-                6 ofertas a partir de
+            <div className="bg-theme-primary p-3 sm:p-4 rounded border">
+              <div className="text-2xl sm:text-3xl font-bold text-theme-primary">
+                R{"$ "}
+                {typeof product.price === "string"
+                  ? product.price.replace(".", ",")
+                  : product.price}
               </div>
-              <div className="text-3xl font-bold text-theme-primary">
-                R$ {product.price.split(",")[0]},
-                <span className="text-lg">{product.price.split(",")[1]}</span>
-              </div>
+              {currentPharmacy && (
+                <div className="text-xs sm:text-sm text-gray-600 mt-2">
+                  {currentPharmacy.name}
+                </div>
+              )}
             </div>
 
-            <div className="flex space-x-4">
-              <Button onClick={handleBuyNow} className="btn-theme-primary px-8">
+            {otherPharmacies.length > 0 && (
+              <div className="mt-3 sm:mt-4 p-3 sm:p-4 border rounded">
+                <h3 className="text-xs sm:text-sm font-semibold text-theme-primary mb-2 sm:mb-3">
+                  Outras farmácias com este produto:
+                </h3>
+                <div className="space-y-2">
+                  {otherPharmacies.map((pharmacy) => (
+                    <div
+                      key={pharmacy.id}
+                      className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 p-2 border rounded hover:bg-gray-50 cursor-pointer transition-colors"
+                      onClick={() => handlePharmacyClick(pharmacy.pharmacyProductId)}
+                    >
+                      <div className="flex-1 min-w-0">
+                        <div className="text-xs sm:text-sm font-medium text-theme-primary break-words">
+                          {pharmacy.name}
+                        </div>
+                      </div>
+                      <div className="text-left sm:text-right w-full sm:w-auto">
+                        <div className="text-base sm:text-lg font-bold text-theme-secondary">
+                          R$ {pharmacy.price}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            <div className="flex flex-col sm:flex-row gap-3 sm:gap-4">
+              <Button onClick={handleBuyNow} className="btn-theme-primary px-6 sm:px-8 w-full sm:w-auto">
                 Comprar
               </Button>
               <Button
                 onClick={handleAddToCart}
-                className="btn-theme-secondary px-6"
+                className="btn-theme-secondary px-4 sm:px-6 w-full sm:w-auto"
               >
                 Adicionar ao Carrinho
               </Button>
@@ -238,382 +528,87 @@ export function ProductDetail() {
         </div>
       </div>
 
-      {/* Product Description */}
-      <div className="mt-12">
-        <div className="border-b mb-6">
-          <h2 className="text-lg font-semibold text-theme-secondary pb-2 border-b-2 border-theme-secondary inline-block">
+      {/* Description */}
+      <div className="mt-8 sm:mt-12">
+        <div className="border-b mb-4 sm:mb-6">
+          <h2 className="text-base sm:text-lg font-semibold text-theme-secondary pb-2 border-b-2 border-theme-secondary inline-block">
             DESCRIÇÃO
           </h2>
         </div>
-
-        <div className="prose max-w-none text-sm text-gray-700 space-y-4">
-          <p>{productInfo.description}</p>
-
-          <div>
-            <h3 className="font-semibold mb-2 text-theme-primary">
-              Benefícios
-            </h3>
-            <ul className="list-disc list-inside space-y-1">
-              {productInfo.benefits.map((benefit, index) => (
-                <li key={index}>{benefit}</li>
-              ))}
-            </ul>
-          </div>
-
-          <div>
-            <h3 className="font-semibold mb-2 text-theme-primary">
-              Modo de uso
-            </h3>
-            <p>{productInfo.usage}</p>
-          </div>
-
-          <div>
-            <h3 className="font-semibold mb-2 text-theme-primary">
-              Precauções
-            </h3>
-            <p>
-              Produto para uso conforme indicação. Leia atentamente a bula ou
-              rótulo antes do uso. Em caso de dúvidas, consulte um profissional
-              de saúde. Mantenha fora do alcance de crianças.
-            </p>
-          </div>
+        <div className="prose max-w-none text-xs sm:text-sm text-gray-700 space-y-2 sm:space-y-4">
+          <p>{product.description || "Descrição não disponível."}</p>
         </div>
       </div>
 
-      {/* Related Products */}
-      <div className="mt-16">
-        <div className="flex items-center justify-between mb-8">
-          <h2 className="text-xl font-semibold text-theme-primary">
+      {/* Related Products (from API) */}
+      <div className="mt-8 sm:mt-16">
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-4 sm:mb-8 gap-2">
+          <h2 className="text-lg sm:text-xl font-semibold text-theme-primary">
             Produtos relacionados
           </h2>
-          <a href="/" className="text-theme-secondary text-sm hover:underline">
+          <a href="/" className="text-theme-secondary text-xs sm:text-sm hover:underline">
             Ver todos
           </a>
         </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
-          {[
-            {
-              id: "creme-elseve-liso-250ml",
-              name: "Creme para Pentear Elseve Liso dos Sonhos 250ml",
-              price: "17,94",
-              originalPrice: "21,90",
-              image:
-                "/images/products/Creme para Pentear Elseve Liso dos Sonhos 250ml (2).jpg?height=200&width=200&text=Elseve+Main",
-              additionalImages: [
-                "/images/products/Creme para Pentear Elseve Liso dos Sonhos 250ml (3).jpg?height=400&width=400&text=Elseve+Back",
-                "/images/products/Creme para Pentear Elseve Liso dos Sonhos 250ml (2).jpg?height=400&width=400&text=Elseve+Back",
-              ],
-              category: "Cabelos",
-              reference: "7509785461900",
-              keywords: [
-                "creme",
-                "pentear",
-                "elseve",
-                "liso",
-                "sonhos",
-                "cabelo",
-                "hair",
-                "cream",
-              ],
-            },
-            {
-              id: "paracetamol-500mg-20comp",
-              name: "Paracetamol 500mg 20 Comprimidos",
-              price: "8,90",
-              originalPrice: "12,90",
-              image:
-                "images/products/paracetamol.jpg?height=200&width=200&text=Paracetamol+Main",
-              additionalImages: [
-                "images/products/paracetamol_2.jpg?height=400&width=400&text=Paracetamol+Box",
-              ],
-              category: "Remédios e medicamentos",
-              reference: "7891058001234",
-              keywords: [
-                "paracetamol",
-                "dor",
-                "febre",
-                "comprimido",
-                "analgesico",
-                "pain",
-                "fever",
-              ],
-            },
-            {
-              id: "ibuprofeno-600mg-10comp",
-              name: "Ibuprofeno 600mg 10 Comprimidos",
-              price: "15,90",
-              originalPrice: "19,90",
-              image:
-                "images/products/Ibuprofeno 600mg 10 Comprimidos.jpg?height=400&width=400",
-              additionalImages: [],
-              category: "Remédios e medicamentos",
-              reference: "7891058005678",
-              keywords: [
-                "ibuprofeno",
-                "anti-inflamatorio",
-                "dor",
-                "comprimido",
-                "analgesico",
-                "inflammation",
-              ],
-            },
-            {
-              id: "oscillococcinum-30-tubos",
-              name: "Oscillococcinum 30 Tubos de 1g",
-              price: "235,90",
-              originalPrice: "289,90",
-              image:
-                "images/products/Oscillococcinum 30 Tubos de 1g (1).jpg?height=200&width=200&text=Oscillococcinum+Main",
-              additionalImages: [
-                "images/products/Oscillococcinum 30 Tubos de 1g (2).jpg?height=400&width=400&text=Oscillococcinum+Tubes",
-              ],
-              category: "Genéricos",
-              reference: "3400930404041",
-              keywords: [
-                "oscillococcinum",
-                "homeopatico",
-                "gripe",
-                "resfriado",
-                "flu",
-                "cold",
-              ],
-            },
-            {
-              id: "dorflex-max-8comp",
-              name: "Dorflex Max Sanofi Com 8 Comprimidos",
-              price: "14,30",
-              originalPrice: "17,90",
-              image:
-                "images/products/Dorflex Max Sanofi Com 8 Comprimidos (1).jpg?height=200&width=200&text=Dorflex+Main",
-              additionalImages: [
-                "images/products/Dorflex Max Sanofi Com 8 Comprimidos (2).jpg?height=400&width=400&text=Dorflex+Box",
-              ],
-              category: "Genéricos",
-              reference: "7891058009876",
-              keywords: [
-                "dorflex",
-                "dor",
-                "muscular",
-                "relaxante",
-                "muscle",
-                "pain",
-                "sanofi",
-              ],
-            },
-            {
-              id: "whey-protein-900g",
-              name: "Whey Protein 900g",
-              price: "89,90",
-              originalPrice: "120,90",
-              image:
-                "images/products/Whey Protein 900g (2).jpg?height=200&width=200&text=Whey+Main",
-              additionalImages: [
-                "images/products/Whey Protein 900g (1).jpg?height=400&width=400&text=Whey+Back",
-              ],
-              category: "Saúde e bem-estar",
-              reference: "7891234567890",
-              keywords: [
-                "whey",
-                "protein",
-                "proteina",
-                "suplemento",
-                "musculacao",
-                "fitness",
-                "workout",
-              ],
-            },
-            {
-              id: "oleo-coco-500ml",
-              name: "Óleo de Coco Extra Virgem 500ml",
-              price: "25,90",
-              originalPrice: "32,90",
-              image:
-                "images/products/Óleo de Coco Extra Virgem 500ml (1).jpg?height=200&width=200&text=Coconut+Oil+Main",
-              additionalImages: [
-                "images/products/Óleo de Coco Extra Virgem 500ml (2).jpg?height=400&width=400&text=Coconut+Oil+Label",
-                "images/products/Óleo de Coco Extra Virgem 500ml (3).jpg?height=400&width=400&text=Coconut+Oil+Label",
-              ],
-              category: "Saúde e bem-estar",
-              reference: "7891234567891",
-              keywords: [
-                "oleo",
-                "coco",
-                "coconut",
-                "oil",
-                "natural",
-                "virgem",
-                "culinario",
-              ],
-            },
-            {
-              id: "fralda-pampers-rn",
-              name: "Fralda Pampers Recém-Nascido",
-              price: "45,90",
-              originalPrice: "55,90",
-              image:
-                "images/products/Fralda Pampers Recém-Nascido (1).jpg?height=200&width=200&text=Pampers+Main",
-              additionalImages: [
-                "images/products/Fralda Pampers Recém-Nascido (2).jpg?height=400&width=400&text=Pampers+Package",
-                "images/products/Fralda Pampers Recém-Nascido (3).jpg?height=400&width=400&text=Pampers+Features",
-              ],
-              category: "Mamães e bebês",
-              reference: "7500435123456",
-              keywords: [
-                "fralda",
-                "pampers",
-                "bebe",
-                "recem-nascido",
-                "diaper",
-                "baby",
-                "newborn",
-              ],
-            },
-            {
-              id: "shampoo-johnsons-400ml",
-              name: "Shampoo Johnson's Baby 400ml",
-              price: "18,90",
-              originalPrice: "24,90",
-              image:
-                "images/products/Shampoo Johnson's Baby 400ml (2).jpg?height=200&width=200&text=Johnsons+Main",
-              additionalImages: [
-                "images/products/Shampoo Johnson's Baby 400ml (3).jpg?height=400&width=400&text=Johnsons+Back",
-                "images/products/Shampoo Johnson's Baby 400ml (1).jpg?height=400&width=400&text=Johnsons+Ingredients",
-              ],
-              category: "Mamães e bebês",
-              reference: "7891010123456",
-              keywords: [
-                "shampoo",
-                "johnsons",
-                "baby",
-                "bebe",
-                "cabelo",
-                "hair",
-                "crianca",
-              ],
-            },
-            {
-              id: "protetor-solar-laroche-fps60",
-              name: "Protetor Solar La Roche Posay FPS 60",
-              price: "89,90",
-              originalPrice: "110,90",
-              image:
-                "images/products/Protetor Solar La Roche Posay FPS 60 (1).jpg?height=200&width=200&text=La+Roche+Main",
-              additionalImages: [
-                "images/products/Protetor Solar La Roche Posay FPS 60 (2).jpg?height=400&width=400&text=La+Roche+Back",
-              ],
-              category: "Dermocosméticos",
-              reference: "3337875543210",
-              keywords: [
-                "protetor",
-                "solar",
-                "fps",
-                "la roche posay",
-                "sun",
-                "screen",
-                "dermatologico",
-              ],
-            },
-            {
-              id: "serum-vitamina-c-ordinary",
-              name: "Sérum Vitamina C The Ordinary",
-              price: "65,90",
-              originalPrice: "79,90",
-              image:
-                "images/products/Sérum Vitamina C The Ordinary (2).jpg?height=200&width=200&text=Ordinary+Main",
-              additionalImages: [
-                "images/products/Sérum Vitamina C The Ordinary (1).jpg?height=400&width=400&text=Ordinary+Dropper",
-              ],
-              category: "Dermocosméticos",
-              reference: "0769915190427",
-              keywords: [
-                "serum",
-                "vitamina",
-                "c",
-                "the ordinary",
-                "skincare",
-                "antioxidante",
-                "facial",
-              ],
-            },
-            {
-              id: "glicosimetro-accu-chek",
-              name: "Glicosímetro Accu-Chek Active",
-              price: "45,90",
-              originalPrice: "59,90",
-              image:
-                "images/products/Glicosímetro Accu-Chek Active (1).jpg?height=200&width=200&text=Accu+Chek+Main",
-              additionalImages: [
-                "images/products/Glicosímetro Accu-Chek Active (2).jpg?height=400&width=400&text=Accu+Chek+Kit",
-              ],
-              category: "Diabetes",
-              reference: "4015630987654",
-              keywords: [
-                "glicosimetro",
-                "accu-chek",
-                "diabetes",
-                "glicose",
-                "glucose",
-                "meter",
-                "teste",
-              ],
-            },
-            {
-              id: "tiras-reagentes-50un",
-              name: "Tiras Reagentes Glicemia 50un",
-              price: "89,90",
-              originalPrice: "105,90",
-              image:
-                "images/products/Tiras Reagentes Glicemia 50un (3).jpg?height=200&width=200&text=Test+Strips+Main",
-              additionalImages: [],
-              category: "Diabetes",
-              reference: "4015630987655",
-              keywords: [
-                "tiras",
-                "reagentes",
-                "glicemia",
-                "diabetes",
-                "teste",
-                "strips",
-                "glucose",
-              ],
-            },
-          ]
-            // Filter by same category as current product
-            .filter(
-              (relatedProduct) =>
-                relatedProduct.category === product.category &&
-                relatedProduct.id !== product.id
-            )
-            .map((relatedProduct, index) => (
+        {loadingProducts && (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Card key={i} className="p-2 sm:p-4 animate-pulse">
+                <div className="w-full aspect-square bg-gray-200 rounded mb-2 sm:mb-4" />
+                <div className="h-3 sm:h-4 bg-gray-200 rounded w-3/4 mb-2" />
+                <div className="h-3 sm:h-4 bg-gray-200 rounded w-1/2" />
+              </Card>
+            ))}
+          </div>
+        )}
+
+        {!loadingProducts && productsError && (
+          <p className="text-xs sm:text-sm text-red-600">
+            Não foi possível carregar os produtos no momento.
+          </p>
+        )}
+
+        {!loadingProducts && !productsError && relatedProducts.length === 0 && (
+          <p className="text-xs sm:text-sm text-gray-500">
+            Nenhum produto relacionado encontrado.
+          </p>
+        )}
+
+        {!loadingProducts && !productsError && relatedProducts.length > 0 && (
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+            {relatedProducts.map((relatedProduct) => (
               <Card
-                key={index}
-                className="p-4 hover:shadow-lg transition-shadow"
+                key={relatedProduct.id}
+                className="p-2 sm:p-4 hover:shadow-lg transition-shadow flex flex-col"
               >
-                <div className="relative mb-4">
+                <div className="relative mb-2 sm:mb-4 flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden">
                   <Image
-                    src={relatedProduct.image}
+                    src={
+                      relatedProduct.image ||
+                      "/placeholder.svg?height=200&width=200"
+                    }
                     alt={relatedProduct.name}
                     width={150}
                     height={150}
-                    className="w-full h-auto"
+                    className="w-full h-full object-contain p-1 sm:p-2"
                   />
                 </div>
 
-                <h3 className="text-sm font-medium text-theme-primary mb-2 line-clamp-2">
+                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-2 line-clamp-2 min-h-[2.5rem] flex-shrink-0">
                   {relatedProduct.name}
                 </h3>
 
-                <div className="space-y-1">
-                  <div className="text-lg font-bold text-theme-primary">
-                    R$ {relatedProduct.price}
+                <div className="space-y-1 flex-shrink-0">
+                  <div className="text-sm sm:text-lg font-bold text-theme-primary">
+                    {relatedProduct.price ? `R$ ${relatedProduct.price}` : "—"}
                   </div>
                 </div>
 
-                <div className="flex space-x-2 mt-3">
+                <div className="flex space-x-1 sm:space-x-2 mt-3">
                   <Button
                     onClick={() => handleRelatedProductClick(relatedProduct)}
-                    className="flex-1 btn-theme-primary text-sm"
+                    className="flex-1 btn-theme-primary text-xs sm:text-sm py-1 sm:py-2"
                   >
                     DETALHES
                   </Button>
@@ -622,11 +617,14 @@ export function ProductDetail() {
                       addToCart({
                         id: `${relatedProduct.id}-${Date.now()}`,
                         name: relatedProduct.name,
-                        price: relatedProduct.price,
-                        image: relatedProduct.image,
+                        price: relatedProduct.price ?? "",
+                        image:
+                          relatedProduct.image ||
+                          "/placeholder.svg?height=200&width=200",
+                        pharmacyProductId: relatedProduct.pharmacyProductId || null,
                       })
                     }
-                    className="btn-theme-secondary text-sm px-3"
+                    className="btn-theme-secondary text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2"
                     title="Adicionar ao carrinho"
                   >
                     +
@@ -634,7 +632,8 @@ export function ProductDetail() {
                 </div>
               </Card>
             ))}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );

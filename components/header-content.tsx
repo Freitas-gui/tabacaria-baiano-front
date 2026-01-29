@@ -165,7 +165,7 @@ export function HeaderContent() {
               className="text-white hover:text-blue-100 transition-colors duration-200"
             >
               <User className="w-4 h-4 mr-1" />
-              <span className="text-sm">Ramon Santana</span>
+              <span className="text-sm">Login</span>
             </Button>
             <Button
               variant="ghost"
@@ -191,36 +191,36 @@ export function HeaderContent() {
             >
               Remédios e medicamentos
             </button>
-            <button
+            {/* <button
               onClick={() => handleCategoryClick("Genéricos")}
               className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
             >
               Genéricos
-            </button>
-            <button
+            </button> */}
+            {/* <button
               onClick={() => handleCategoryClick("Saúde e bem-estar")}
               className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
             >
               Saúde e bem-estar
-            </button>
+            </button> */}
             <button
               onClick={() => handleCategoryClick("Mamães e bebês")}
               className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
             >
               Mamães e bebês
             </button>
-            <button
+            {/* <button
               onClick={() => handleCategoryClick("Dermocosméticos")}
               className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
             >
               Dermocosméticos
-            </button>
-            <button
+            </button> */}
+            {/* <button
               onClick={() => handleCategoryClick("Diabetes")}
               className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
             >
               Diabetes
-            </button>
+            </button> */}
             <button
               onClick={() => handleCategoryClick("Cabelos")}
               className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"

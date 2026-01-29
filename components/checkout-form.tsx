@@ -2,8 +2,9 @@
 
 import type React from "react";
 
-import { useState } from "react";
-import { useCart } from "@/contexts/cart-context";
+import { useState, useEffect, useCallback } from "react";
+import { useCart, type CartItem } from "@/contexts/cart-context";
+import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,22 +12,115 @@ import { Separator } from "@/components/ui/separator";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { API_BASE_URL } from "@/lib/api";
 
 export function CheckoutForm() {
   const { items, updateQuantity, removeFromCart, getTotalPrice, clearCart } =
     useCart();
+  const { user } = useUser();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>({});
+  const [loadingPharmacyNames, setLoadingPharmacyNames] = useState<Record<string, boolean>>({});
+  const [productStocks, setProductStocks] = useState<Record<string, number>>({});
+  const [loadingStocks, setLoadingStocks] = useState<Record<string, boolean>>({});
 
   const [formData, setFormData] = useState({
-    name: "",
     email: "",
     phone: "",
-    address: "",
+    street: "",
+    street_number: "",
+    address_details: "",
+    district: "",
     city: "",
+    state: "",
     zipCode: "",
-    paymentMethod: "credit",
+    paymentMethod: "pix",
   });
+
+  useEffect(() => {
+    if (user?.address) {
+      setFormData({
+        email: user.email,
+        phone: user.phone || "",
+        street: user.address.street || "",
+        street_number: user.address.street_number || "",
+        address_details: user.address.address_details || "",
+        district: user.address.district || "",
+        city: user.address.city || "",
+        state: user.address.state || "",
+        zipCode: user.address.postal_code || "",
+        paymentMethod: "pix",
+      });
+    } else if (user) {
+      setFormData({
+        email: user.email,
+        phone: user.phone || "",
+        street: "",
+        street_number: "",
+        address_details: "",
+        district: "",
+        city: "",
+        state: "",
+        zipCode: "",
+        paymentMethod: "pix",
+      });
+    }
+  }, [user]);
+
+  const fetchProductInfo = useCallback(async (pharmacyProductId: string, itemId: string) => {
+    setLoadingPharmacyNames(prev => {
+      if (prev[itemId]) return prev;
+      return { ...prev, [itemId]: true };
+    });
+    setLoadingStocks(prev => {
+      if (prev[itemId]) return prev;
+      return { ...prev, [itemId]: true };
+    });
+
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/product/show/${pharmacyProductId}`);
+      
+      if (res.ok && res.status !== 204) {
+        const json = await res.json();
+        const data = json.data || json;
+        
+        if (data?.pharmacy?.name) {
+          setPharmacyNames(prev => {
+            if (prev[itemId]) return prev;
+            return { ...prev, [itemId]: data.pharmacy.name };
+          });
+        }
+
+        if (data?.stock !== undefined && data?.stock !== null) {
+          setProductStocks(prev => {
+            if (prev[itemId] !== undefined) return prev;
+            return { ...prev, [itemId]: data.stock };
+          });
+        }
+      }
+    } catch (error) {
+      console.error("Error fetching product info:", error);
+    } finally {
+      setLoadingPharmacyNames(prev => ({ ...prev, [itemId]: false }));
+      setLoadingStocks(prev => ({ ...prev, [itemId]: false }));
+    }
+  }, []);
+
+  useEffect(() => {
+    items.forEach((item) => {
+      if (item.pharmacyProductId && !loadingPharmacyNames[item.id] && !loadingStocks[item.id]) {
+        const needsPharmacyName = !item.pharmacyName && !pharmacyNames[item.id];
+        const needsStock = productStocks[item.id] === undefined;
+        
+        if (needsPharmacyName || needsStock) {
+          fetchProductInfo(item.pharmacyProductId, item.id);
+        } else if (item.pharmacyName && !pharmacyNames[item.id]) {
+          setPharmacyNames(prev => ({ ...prev, [item.id]: item.pharmacyName! }));
+        }
+      }
+    });
+  }, [items, fetchProductInfo, pharmacyNames, loadingPharmacyNames, productStocks, loadingStocks]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
@@ -39,34 +133,122 @@ export function CheckoutForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    if (!user || !user.accessToken) {
+      alert("Erro: usuário não autenticado");
+      return;
+    }
+
+    const stockErrors: string[] = [];
+    
+    for (const item of items) {
+      if (!item.pharmacyProductId) {
+        alert(`Produto "${item.name}" não possui pharmacyProductId. Por favor, remova o item do carrinho e adicione novamente.`);
+        return;
+      }
+
+      const availableStock = productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
+      if (availableStock !== undefined && availableStock !== null) {
+        if (item.quantity > availableStock) {
+          stockErrors.push(`Estoque insuficiente para "${item.name}". Quantidade disponível: ${availableStock}, quantidade solicitada: ${item.quantity}`);
+        }
+      }
+    }
+
+    if (stockErrors.length > 0) {
+      alert(stockErrors.join("\n"));
+      return;
+    }
+
     setIsSubmitting(true);
 
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    try {
+      console.log("Cart items:", items);
 
-    // Show modal alert with the success message
-    if (typeof window !== "undefined") {
+      const products = items.map(item => {
+        console.log("Cart item ID:", item.id, "Pharmacy Product ID:", item.pharmacyProductId);
+        return {
+          pharmacy_product_id: item.pharmacyProductId,
+          amount: item.quantity
+        };
+      });
+
+      console.log("Products array:", products);
+
+      const requestBody = {
+        user_id: user.id,
+        payment_method: formData.paymentMethod,
+        address: {
+          street: formData.street,
+          street_number: formData.street_number,
+          address_details: formData.address_details || "",
+          district: formData.district,
+          city: formData.city,
+          state: formData.state,
+          postal_code: formData.zipCode,
+        },
+        products: products
+      };
+
+      console.log("Request body:", JSON.stringify(requestBody, null, 2));
+
+      const response = await fetch(`${API_BASE_URL}/api/customer/orders`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${user.accessToken}`,
+        },
+        body: JSON.stringify(requestBody),
+      });
+
+      const data = await response.json();
+      console.log("API Response:", data);
+
+      if (!response.ok) {
+        console.error("API Error:", data);
+        let errorMessage = "Erro ao criar pedido";
+        
+        if (data.errors && Array.isArray(data.errors)) {
+          const stockErrors = data.errors.filter((err: string) => err.includes("Estoque insuficiente"));
+          if (stockErrors.length > 0) {
+            errorMessage = stockErrors.join("\n");
+          } else {
+            errorMessage = data.errors.join("\n");
+          }
+        } else if (data.message) {
+          errorMessage = data.message;
+        } else if (typeof data.errors === "string") {
+          errorMessage = data.errors;
+        }
+        
+        alert(`Erro: ${errorMessage}`);
+        setIsSubmitting(false);
+        return;
+      }
+
       const modal = document.createElement("dialog");
       modal.style.padding = "2rem";
       modal.style.borderRadius = "8px";
       modal.innerHTML = `
       <div style="text-align:center;">
         <h2 style="color:#16a34a; font-size:1.5rem; margin-bottom:1rem;">Pedido realizado com sucesso!</h2>
-        <p style="margin-bottom:1rem;">${items.length} produtos foram comprados.<br>Você receberá um email de confirmação.</p>
+        <p style="margin-bottom:1rem;">${items.length} produtos foram comprados.</p>
         <button id="close-modal" style="background:#16a34a; color:white; padding:0.5rem 1.5rem; border:none; border-radius:4px; font-size:1rem; cursor:pointer;">OK</button>
       </div>
       `;
       document.body.appendChild(modal);
-      // @ts-ignore
       modal.showModal();
       modal.querySelector("#close-modal")?.addEventListener("click", () => {
-        // @ts-ignore
         modal.close();
         modal.remove();
+        clearCart();
+        router.push("/pedidos");
       });
+    } catch (error) {
+      console.error("Error creating order:", error);
+      alert("Erro ao conectar com o servidor. Tente novamente.");
+      setIsSubmitting(false);
     }
-    clearCart();
-    router.push("/pedidos");
   };
 
   if (items.length === 0) {
@@ -91,103 +273,136 @@ export function CheckoutForm() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
-      <h1 className="text-3xl font-bold text-theme-primary mb-8">
+    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+      <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary mb-4 sm:mb-8">
         Finalizar Compra
       </h1>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mt-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mt-4 sm:mt-8">
         {/* Cart Items */}
         <div>
           <Card>
-            <CardHeader className="">
-              <CardTitle className="text-theme-primary">
+            <CardHeader className="p-3 sm:p-6">
+              <CardTitle className="text-base sm:text-lg text-theme-primary">
                 Seus Produtos ({items.length} itens)
               </CardTitle>
             </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
+            <CardContent className="p-3 sm:p-6">
+              <div className="space-y-3 sm:space-y-4">
                 {items.map((item, index) => (
                   <div
                     key={item.id}
-                    className="flex items-center space-x-4 p-4 border rounded"
+                    className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 border rounded"
                   >
-                    <div className="text-xs text-gray-500 w-8">
-                      #{index + 1}
+                    <div className="flex items-center gap-3 w-full sm:w-auto">
+                      <div className="text-xs text-gray-500 w-6 sm:w-8 flex-shrink-0">
+                        #{index + 1}
+                      </div>
+
+                      <div className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden">
+                        <Image
+                          src={item.image || "/placeholder.svg?height=80&width=80"}
+                          alt={item.name}
+                          width={80}
+                          height={80}
+                          className="w-16 h-16 sm:w-20 sm:h-20 object-contain p-1"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = "/placeholder.svg?height=80&width=80";
+                          }}
+                        />
+                      </div>
+
+                      <div className="flex-1 min-w-0">
+                        <h3 className="font-medium text-theme-primary text-xs sm:text-sm line-clamp-2">
+                          {item.name}
+                        </h3>
+                        <p className="text-base sm:text-lg font-bold text-theme-primary">
+                          R$ {item.price}
+                        </p>
+                        <p className="text-xs sm:text-sm text-theme-secondary">
+                          Quantidade: {item.quantity}
+                          {(() => {
+                            const availableStock = productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
+                            if (availableStock !== undefined && availableStock !== null) {
+                              return ` / Estoque: ${availableStock}`;
+                            }
+                            return "";
+                          })()}
+                        </p>
+                        {(item.pharmacyName || pharmacyNames[item.id]) && (
+                          <p className="text-xs sm:text-sm text-theme-secondary mt-1">
+                            Farmácia: {item.pharmacyName || pharmacyNames[item.id]}
+                          </p>
+                        )}
+                        {loadingPharmacyNames[item.id] && !item.pharmacyName && !pharmacyNames[item.id] && (
+                          <p className="text-xs sm:text-sm text-gray-400 mt-1">
+                            Carregando farmácia...
+                          </p>
+                        )}
+                        <p className="text-xs sm:text-sm font-semibold text-theme-secondary mt-1">
+                          Subtotal: R${" "}
+                          {(
+                            Number.parseFloat(item.price.replace(",", ".")) *
+                            item.quantity
+                          )
+                            .toFixed(2)
+                            .replace(".", ",")}
+                        </p>
+                      </div>
                     </div>
 
-                    <Image
-                      src={item.image || "/placeholder.svg?height=80&width=80"}
-                      alt={item.name}
-                      width={80}
-                      height={80}
-                      className="rounded"
-                      onError={(e) => {
-                        const target = e.target as HTMLImageElement;
-                        target.src = "/placeholder.svg?height=80&width=80";
-                      }}
-                    />
-
-                    <div className="flex-1">
-                      <h3 className="font-medium text-theme-primary text-sm">
-                        {item.name}
-                      </h3>
-                      <p className="text-lg font-bold text-theme-primary">
-                        R$ {item.price}
-                      </p>
-                      <p className="text-sm text-theme-secondary">
-                        Quantidade: {item.quantity}
-                      </p>
-                      <p className="text-sm font-semibold text-theme-secondary">
-                        Subtotal: R${" "}
-                        {(
-                          Number.parseFloat(item.price.replace(",", ".")) *
-                          item.quantity
-                        )
-                          .toFixed(2)
-                          .replace(".", ",")}
-                      </p>
-                      <p className="text-xs text-gray-400">ID: {item.id}</p>
-                    </div>
-
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 w-full sm:w-auto justify-end sm:justify-start">
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() =>
                           updateQuantity(item.id, item.quantity - 1)
                         }
-                        className="text-theme-secondary hover:bg-theme-primary"
+                        className="text-theme-secondary hover:bg-theme-primary h-8 w-8 p-0"
                       >
-                        <Minus className="w-4 h-4" />
+                        <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
                       </Button>
-                      <span className="w-8 text-center">{item.quantity}</span>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity + 1)
-                        }
-                        className="text-theme-secondary hover:bg-theme-primary"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </Button>
+                      <span className="w-6 sm:w-8 text-center text-sm">{item.quantity}</span>
+                      {(() => {
+                        const availableStock = productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
+                        const maxQuantity = availableStock !== undefined && availableStock !== null ? availableStock : Infinity;
+                        const isMaxReached = item.quantity >= maxQuantity;
+                        return (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => {
+                              if (!isMaxReached) {
+                                updateQuantity(item.id, item.quantity + 1);
+                              } else {
+                                alert(`Estoque máximo disponível: ${maxQuantity}`);
+                              }
+                            }}
+                            disabled={isMaxReached}
+                            className="text-theme-secondary hover:bg-theme-primary h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={isMaxReached ? `Estoque máximo: ${maxQuantity}` : "Aumentar quantidade"}
+                          >
+                            <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </Button>
+                        );
+                      })()}
                       <Button
                         variant="outline"
                         size="sm"
                         onClick={() => removeFromCart(item.id)}
-                        className="text-red-500 hover:text-red-700 border-red-300 hover:bg-red-50"
+                        className="text-red-500 hover:text-red-700 border-red-300 hover:bg-red-50 h-8 w-8 p-0"
                       >
-                        <Trash2 className="w-4 h-4" />
+                        <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
                       </Button>
                     </div>
                   </div>
                 ))}
               </div>
 
-              <Separator className="my-4" />
+              <Separator className="my-3 sm:my-4" />
 
-              <div className="flex justify-between items-center text-xl font-bold">
+              <div className="flex justify-between items-center text-lg sm:text-xl font-bold">
                 <span className="text-theme-primary">Total:</span>
                 <span className="text-theme-primary">
                   R$ {getTotalPrice().toFixed(2).replace(".", ",")}
@@ -197,76 +412,76 @@ export function CheckoutForm() {
           </Card>
         </div>
 
-        {/* Checkout Form */}
+        {/* Checkout Form or Login Message */}
         <div>
-          <Card>
-            <CardHeader className="bg-theme-primary">
-              <CardTitle className="text-theme-primary">
-                Dados de Entrega
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleSubmit} className="space-y-4 mt-4">
+          {user ? (
+            <Card>
+              <CardHeader className="bg-theme-primary p-3 sm:p-6">
+                <CardTitle className="text-base sm:text-lg text-theme-primary">
+                  Dados de Entrega
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 sm:p-6">
+              <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4 mt-2 sm:mt-4">
                 <div>
-                  <label className="block text-sm font-medium text-theme-primary mb-1">
-                    Nome Completo *
+                  <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                    Rua *
                   </label>
                   <Input
-                    name="name"
-                    value={formData.name}
+                    name="street"
+                    value={formData.street}
                     onChange={handleInputChange}
                     required
-                    placeholder="Seu nome completo"
-                    className="focus:border-theme-secondary"
+                    placeholder="Nome da rua"
+                    className="focus:border-theme-secondary text-sm sm:text-base"
                   />
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-theme-primary mb-1">
-                    Email *
-                  </label>
-                  <Input
-                    name="email"
-                    type="email"
-                    value={formData.email}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="seu@email.com"
-                    className="focus:border-theme-secondary"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-theme-primary mb-1">
-                    Telefone *
-                  </label>
-                  <Input
-                    name="phone"
-                    value={formData.phone}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="(11) 99999-9999"
-                    className="focus:border-theme-secondary"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-theme-primary mb-1">
-                    Endereço *
-                  </label>
-                  <Input
-                    name="address"
-                    value={formData.address}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Rua, número, complemento"
-                    className="focus:border-theme-secondary"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                   <div>
-                    <label className="block text-sm font-medium text-theme-primary mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Número *
+                    </label>
+                    <Input
+                      name="street_number"
+                      value={formData.street_number}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="123"
+                      className="focus:border-theme-secondary text-sm sm:text-base"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Complemento
+                    </label>
+                    <Input
+                      name="address_details"
+                      value={formData.address_details}
+                      onChange={handleInputChange}
+                      placeholder="Apto, Bloco, etc"
+                      className="focus:border-theme-secondary text-sm sm:text-base"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                    Bairro *
+                  </label>
+                  <Input
+                    name="district"
+                    value={formData.district}
+                    onChange={handleInputChange}
+                    required
+                    placeholder="Nome do bairro"
+                    className="focus:border-theme-secondary text-sm sm:text-base"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                       Cidade *
                     </label>
                     <Input
@@ -275,11 +490,25 @@ export function CheckoutForm() {
                       onChange={handleInputChange}
                       required
                       placeholder="Sua cidade"
-                      className="focus:border-theme-secondary"
+                      className="focus:border-theme-secondary text-sm sm:text-base"
                     />
                   </div>
                   <div>
-                    <label className="block text-sm font-medium text-theme-primary mb-1">
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Estado *
+                    </label>
+                    <Input
+                      name="state"
+                      value={formData.state}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="UF"
+                      maxLength={2}
+                      className="focus:border-theme-secondary text-sm sm:text-base"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                       CEP *
                     </label>
                     <Input
@@ -288,33 +517,33 @@ export function CheckoutForm() {
                       onChange={handleInputChange}
                       required
                       placeholder="00000-000"
-                      className="focus:border-theme-secondary"
+                      className="focus:border-theme-secondary text-sm sm:text-base"
                     />
                   </div>
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium text-theme-primary mb-1">
+                  <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                     Forma de Pagamento *
                   </label>
                   <select
                     name="paymentMethod"
                     value={formData.paymentMethod}
                     onChange={handleInputChange}
-                    className="w-full p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-theme-secondary focus:border-theme-secondary"
+                    className="w-full p-2 sm:p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-theme-secondary focus:border-theme-secondary text-sm sm:text-base"
                     required
                   >
+                    <option value="pix">PIX</option>
+                    <option value="dinheiro">Dinheiro</option>
                     <option value="credit">Cartão de Crédito</option>
                     <option value="debit">Cartão de Débito</option>
-                    <option value="pix">PIX</option>
-                    <option value="boleto">Boleto Bancário</option>
                   </select>
                 </div>
 
                 <Button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full btn-theme-primary py-3 text-lg"
+                  className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                 >
                   {isSubmitting
                     ? "Processando..."
@@ -325,6 +554,40 @@ export function CheckoutForm() {
               </form>
             </CardContent>
           </Card>
+          ) : (
+          <Card>
+            <CardHeader className="bg-theme-primary p-3 sm:p-6">
+              <CardTitle className="text-base sm:text-lg text-theme-primary">
+                Dados de Entrega
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-3 sm:p-6">
+              <div className="text-center py-6 sm:py-8">
+                <h2 className="text-lg sm:text-xl font-bold text-theme-primary mb-3 sm:mb-4">
+                  Faça login para finalizar a compra
+                </h2>
+                <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 px-2">
+                  Você precisa estar logado para finalizar sua compra. Crie uma conta gratuitamente ou faça login se já tiver uma.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
+                  <Button
+                    onClick={() => router.push("/login")}
+                    className="btn-theme-primary w-full sm:w-auto"
+                  >
+                    Fazer Login
+                  </Button>
+                  <Button
+                    onClick={() => router.push("/register")}
+                    variant="outline"
+                    className="border-theme-primary text-theme-primary hover:bg-theme-primary hover:text-white w-full sm:w-auto"
+                  >
+                    Criar Conta
+                  </Button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+          )}
         </div>
       </div>
     </div>

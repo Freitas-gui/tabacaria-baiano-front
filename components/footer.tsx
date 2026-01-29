@@ -1,8 +1,8 @@
 export function Footer() {
   return (
-    <footer className="bg-theme-header mt-16">
-      <div className="container mx-auto px-4 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
+    <footer className="bg-theme-header mt-8 sm:mt-16">
+      <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-6 sm:gap-8">
           {/* Logo */}
           <div className="lg:col-span-1">
             <div className="text-2xl font-bold text-theme-accent mb-4">
@@ -143,22 +143,22 @@ export function Footer() {
         </div>
 
         {/* Bottom */}
-        <div className="border-t border-theme-secondary mt-8 pt-8">
-          <div className="text-xs text-white mb-4">
+        <div className="border-t border-theme-secondary mt-6 sm:mt-8 pt-6 sm:pt-8">
+          <div className="text-xs text-white mb-3 sm:mb-4 break-words">
             O nome fantasia CLICK FARMA e o domínio www.clickfarma.com.br especificamente, são marcas registradas por:
             Farmácias Drogarias Ltda. Av. Pereira Barreto, 1479 - Sala 714 - Bairro Neves - São Bernardo do Campo - SP -
             09751-000. CNPJ: 54.963.094.0001-06 Inscrição Estadual: 799.916.562.116 Atendimento Farmacêutico: Segunda a
             sexta das 8:00 às 18:00.
           </div>
-          <div className="text-xs text-white mb-4">
+          <div className="text-xs text-white mb-3 sm:mb-4 break-words">
             Toda a comercialização deste site é de propriedade da Farmácias Drogarias Ltda. É expressamente proibida a
             reprodução total ou parcial, mesmo citando a fonte.
           </div>
-          <div className="flex justify-between items-center">
+          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0">
             <div className="text-xs text-white">© CLICK FARMA - TODOS DIREITOS RESERVADOS</div>
-            <div className="flex space-x-4">
-              <span className="text-sm font-semibold text-theme-accent">wlcomm</span>
-              <span className="text-sm font-semibold text-theme-accent">wake</span>
+            <div className="flex space-x-3 sm:space-x-4">
+              <span className="text-xs sm:text-sm font-semibold text-theme-accent">wlcomm</span>
+              <span className="text-xs sm:text-sm font-semibold text-theme-accent">wake</span>
             </div>
           </div>
         </div>
