@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import Image from "next/image";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { API_BASE_URL } from "@/lib/api";
+import { extractProductImageUrls } from "@/lib/product-images";
 
 // ---- Types ----
 type Pharmacy = {
@@ -78,22 +79,7 @@ export function ProductDetail() {
 
       const normalized: Product[] = data
         .map((p: any) => {
-          // A API tem "iamage" (typo) e pode ter "image". Vamos suportar ambos.
-          const rawImages =
-            (Array.isArray(p?.image) && p.image) ||
-            (Array.isArray(p?.iamage) && p.iamage) ||
-            [];
-
-          // Aceita string[] ou [{url: "..."}]
-          const imgs: string[] = rawImages
-            .map((it: any) =>
-              typeof it === "string"
-                ? it
-                : typeof it?.url === "string"
-                  ? it.url
-                  : null,
-            )
-            .filter(Boolean) as string[];
+          const imgs = extractProductImageUrls(p as Record<string, unknown>);
 
           const normalizedProduct: Product = {
             id: String(p?.id ?? ""),

@@ -8,6 +8,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCart } from "@/contexts/cart-context";
 import { API_BASE_URL } from "@/lib/api";
+import { extractProductImageUrls } from "@/lib/product-images";
 import type { CategoryParent } from "@/lib/categories";
 import {
   findLeafByParam,
@@ -100,22 +101,7 @@ export function HomepageContent() {
 
       const normalized: Product[] = data
         .map((p: any) => {
-          // A API tem "iamage" (typo) e pode ter "image". Vamos suportar ambos.
-          const rawImages =
-            (Array.isArray(p?.image) && p.image) ||
-            (Array.isArray(p?.iamage) && p.iamage) ||
-            [];
-
-          // Aceita string[] ou [{url: "..."}]
-          const imgs: string[] = rawImages
-            .map((it: any) =>
-              typeof it === "string"
-                ? it
-                : typeof it?.url === "string"
-                  ? it.url
-                  : null,
-            )
-            .filter(Boolean);
+          const imgs = extractProductImageUrls(p as Record<string, unknown>);
 
           return {
             id: String(p?.id ?? ""),
