@@ -11,18 +11,19 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Custom theme colors for Click Farma
         theme: {
-          primary: {
-            50: "#D4EBF8",
-            500: "#1F509A",
-            700: "#0A3981",
-          },
-          accent: "#FF9B2F",
-          secondary: "#1F509A",
-          header: "#0A3981",
+          primary: "#F7F3EE",
+          primaryBrown: "#EFE7DD",
+          accent: "#A47148",
+          accentCaramel: "#8C5C36",
+          secondary: "#EFE7DD",
+          header: "#F7F3EE",
+          smokeHighlight: "#D6A77A",
+          smokeSoft: "#6F6F6F",
+          smoke: "#A47148",
+          charcoal: "#2B2B2B",
+          highlight: "#D6A77A",
         },
-        // Shadcn UI colors
         border: "hsl(var(--border))",
         input: "hsl(var(--input))",
         ring: "hsl(var(--ring))",
@@ -65,4 +66,4 @@ module.exports = {
     },
   },
   plugins: [require("tailwindcss-animate")],
-}
+};

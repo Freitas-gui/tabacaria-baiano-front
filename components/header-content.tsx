@@ -17,7 +17,7 @@ export function HeaderContent() {
   // Separate input value from search query to prevent premature clearing
   const [inputValue, setInputValue] = useState("");
   const [activeSearchQuery, setActiveSearchQuery] = useState<string | null>(
-    null
+    null,
   );
   const isInitialLoad = useRef(true);
 
@@ -111,7 +111,7 @@ export function HeaderContent() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-theme-header text-white shadow-md">
+    <header className="sticky top-0 z-50 bg-theme-header text-[var(--text-primary)] shadow-sm">
       <div className="container mx-auto px-4 py-3">
         <div className="flex items-center justify-between">
           {/* Logo */}
@@ -120,18 +120,18 @@ export function HeaderContent() {
               className="text-2xl font-bold cursor-pointer"
               onClick={handleLogoClick}
             >
-              <span className="text-white">Click</span>
-              <div className="text-sm font-normal">Farma</div>
+              <span className="text-[var(--text-primary)]">Tabacaria</span>
+              <div className="text-sm font-normal">do Baiano</div>
             </div>
           </div>
 
           {/* Search Bar */}
           <div className="flex-1 max-w-md mx-8">
             <form onSubmit={handleSearch} className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground w-4 h-4" />
               <Input
                 placeholder="Digite aqui o que busca"
-                className="pl-10 pr-10 bg-white text-gray-900 border-0"
+                className="search pl-10 pr-10 h-auto min-h-[42px] bg-[#ffffff] text-foreground placeholder:text-muted-foreground ring-offset-background focus-visible:ring-0 focus-visible:ring-offset-0"
                 value={inputValue}
                 onChange={handleSearchInputChange}
                 onKeyPress={handleKeyPress}
@@ -141,7 +141,7 @@ export function HeaderContent() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  className="absolute right-1 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+                  className="absolute right-1 top-1/2 transform -translate-y-1/2 text-muted-foreground hover:text-foreground p-1"
                   onClick={clearSearch}
                 >
                   <X className="w-4 h-4" />
@@ -154,7 +154,7 @@ export function HeaderContent() {
           <div className="flex items-center space-x-4">
             <Button
               variant="ghost"
-              className="text-white hover:text-blue-100 transition-colors duration-200"
+              className="text-[var(--text-primary)] hover:text-theme-smoke transition-colors duration-200"
               onClick={() => router.push("/pedidos")}
             >
               <Package className="w-4 h-4 mr-1" />
@@ -162,14 +162,14 @@ export function HeaderContent() {
             </Button>
             <Button
               variant="ghost"
-              className="text-white hover:text-blue-100 transition-colors duration-200"
+              className="text-[var(--text-primary)] hover:text-theme-smoke transition-colors duration-200"
             >
               <User className="w-4 h-4 mr-1" />
               <span className="text-sm">Login</span>
             </Button>
             <Button
               variant="ghost"
-              className="text-white hover:text-blue-100 relative cursor-pointer transition-colors duration-200"
+              className="text-[var(--text-primary)] hover:text-theme-smoke relative cursor-pointer transition-colors duration-200"
               onClick={() => router.push("/checkout")}
             >
               <ShoppingCart className="w-5 h-5" />
@@ -181,51 +181,57 @@ export function HeaderContent() {
         </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="bg-white text-gray-700 border-b">
+      {/* Navigation - tobacconist categories (fallback when API has no categories) */}
+      <nav className="bg-[var(--bg-secondary)] text-muted-foreground border-b border-border">
         <div className="container mx-auto px-4">
-          <div className="flex justify-center space-x-8 py-3">
+          <div className="flex flex-wrap justify-center gap-4 sm:gap-8 py-3">
             <button
-              onClick={() => handleCategoryClick("Remédios e medicamentos")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
+              onClick={() => handleCategoryClick("Papel de seda")}
+              className="category-item text-sm cursor-pointer"
             >
-              Remédios e medicamentos
+              Papel de seda
             </button>
-            {/* <button
-              onClick={() => handleCategoryClick("Genéricos")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
-            >
-              Genéricos
-            </button> */}
-            {/* <button
-              onClick={() => handleCategoryClick("Saúde e bem-estar")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
-            >
-              Saúde e bem-estar
-            </button> */}
             <button
-              onClick={() => handleCategoryClick("Mamães e bebês")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
+              onClick={() => handleCategoryClick("Filtros")}
+              className="category-item text-sm cursor-pointer"
             >
-              Mamães e bebês
+              Filtros
             </button>
-            {/* <button
-              onClick={() => handleCategoryClick("Dermocosméticos")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
-            >
-              Dermocosméticos
-            </button> */}
-            {/* <button
-              onClick={() => handleCategoryClick("Diabetes")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
-            >
-              Diabetes
-            </button> */}
             <button
-              onClick={() => handleCategoryClick("Cabelos")}
-              className="text-sm cursor-pointer transition-colors duration-200 hover:text-theme-secondary"
+              onClick={() => handleCategoryClick("Isqueiros")}
+              className="category-item text-sm cursor-pointer"
             >
-              Cabelos
+              Isqueiros
+            </button>
+            <button
+              onClick={() => handleCategoryClick("Moedores")}
+              className="category-item text-sm cursor-pointer"
+            >
+              Moedores
+            </button>
+            <button
+              onClick={() => handleCategoryClick("Cinzeiros")}
+              className="category-item text-sm cursor-pointer"
+            >
+              Cinzeiros
+            </button>
+            <button
+              onClick={() => handleCategoryClick("Narguilé e acessórios")}
+              className="category-item text-sm cursor-pointer"
+            >
+              Narguilé e acessórios
+            </button>
+            <button
+              onClick={() => handleCategoryClick("Vapes e acessórios")}
+              className="category-item text-sm cursor-pointer"
+            >
+              Vapes e acessórios
+            </button>
+            <button
+              onClick={() => handleCategoryClick("Charutos e acessórios")}
+              className="category-item text-sm cursor-pointer"
+            >
+              Charutos e acessórios
             </button>
           </div>
         </div>

@@ -20,10 +20,18 @@ export function CheckoutForm() {
   const { user } = useUser();
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>({});
-  const [loadingPharmacyNames, setLoadingPharmacyNames] = useState<Record<string, boolean>>({});
-  const [productStocks, setProductStocks] = useState<Record<string, number>>({});
-  const [loadingStocks, setLoadingStocks] = useState<Record<string, boolean>>({});
+  const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
+    {},
+  );
+  const [loadingPharmacyNames, setLoadingPharmacyNames] = useState<
+    Record<string, boolean>
+  >({});
+  const [productStocks, setProductStocks] = useState<Record<string, number>>(
+    {},
+  );
+  const [loadingStocks, setLoadingStocks] = useState<Record<string, boolean>>(
+    {},
+  );
 
   const [formData, setFormData] = useState({
     email: "",
@@ -68,62 +76,81 @@ export function CheckoutForm() {
     }
   }, [user]);
 
-  const fetchProductInfo = useCallback(async (pharmacyProductId: string, itemId: string) => {
-    setLoadingPharmacyNames(prev => {
-      if (prev[itemId]) return prev;
-      return { ...prev, [itemId]: true };
-    });
-    setLoadingStocks(prev => {
-      if (prev[itemId]) return prev;
-      return { ...prev, [itemId]: true };
-    });
+  const fetchProductInfo = useCallback(
+    async (pharmacyProductId: string, itemId: string) => {
+      setLoadingPharmacyNames((prev) => {
+        if (prev[itemId]) return prev;
+        return { ...prev, [itemId]: true };
+      });
+      setLoadingStocks((prev) => {
+        if (prev[itemId]) return prev;
+        return { ...prev, [itemId]: true };
+      });
 
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/product/show/${pharmacyProductId}`);
-      
-      if (res.ok && res.status !== 204) {
-        const json = await res.json();
-        const data = json.data || json;
-        
-        if (data?.pharmacy?.name) {
-          setPharmacyNames(prev => {
-            if (prev[itemId]) return prev;
-            return { ...prev, [itemId]: data.pharmacy.name };
-          });
-        }
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/product/show/${pharmacyProductId}`,
+        );
 
-        if (data?.stock !== undefined && data?.stock !== null) {
-          setProductStocks(prev => {
-            if (prev[itemId] !== undefined) return prev;
-            return { ...prev, [itemId]: data.stock };
-          });
+        if (res.ok && res.status !== 204) {
+          const json = await res.json();
+          const data = json.data || json;
+
+          if (data?.pharmacy?.name) {
+            setPharmacyNames((prev) => {
+              if (prev[itemId]) return prev;
+              return { ...prev, [itemId]: data.pharmacy.name };
+            });
+          }
+
+          if (data?.stock !== undefined && data?.stock !== null) {
+            setProductStocks((prev) => {
+              if (prev[itemId] !== undefined) return prev;
+              return { ...prev, [itemId]: data.stock };
+            });
+          }
         }
+      } catch (error) {
+        console.error("Error fetching product info:", error);
+      } finally {
+        setLoadingPharmacyNames((prev) => ({ ...prev, [itemId]: false }));
+        setLoadingStocks((prev) => ({ ...prev, [itemId]: false }));
       }
-    } catch (error) {
-      console.error("Error fetching product info:", error);
-    } finally {
-      setLoadingPharmacyNames(prev => ({ ...prev, [itemId]: false }));
-      setLoadingStocks(prev => ({ ...prev, [itemId]: false }));
-    }
-  }, []);
+    },
+    [],
+  );
 
   useEffect(() => {
     items.forEach((item) => {
-      if (item.pharmacyProductId && !loadingPharmacyNames[item.id] && !loadingStocks[item.id]) {
+      if (
+        item.pharmacyProductId &&
+        !loadingPharmacyNames[item.id] &&
+        !loadingStocks[item.id]
+      ) {
         const needsPharmacyName = !item.pharmacyName && !pharmacyNames[item.id];
         const needsStock = productStocks[item.id] === undefined;
-        
+
         if (needsPharmacyName || needsStock) {
           fetchProductInfo(item.pharmacyProductId, item.id);
         } else if (item.pharmacyName && !pharmacyNames[item.id]) {
-          setPharmacyNames(prev => ({ ...prev, [item.id]: item.pharmacyName! }));
+          setPharmacyNames((prev) => ({
+            ...prev,
+            [item.id]: item.pharmacyName!,
+          }));
         }
       }
     });
-  }, [items, fetchProductInfo, pharmacyNames, loadingPharmacyNames, productStocks, loadingStocks]);
+  }, [
+    items,
+    fetchProductInfo,
+    pharmacyNames,
+    loadingPharmacyNames,
+    productStocks,
+    loadingStocks,
+  ]);
 
   const handleInputChange = (
-    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>
+    e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     setFormData({
       ...formData,
@@ -133,24 +160,30 @@ export function CheckoutForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!user || !user.accessToken) {
       alert("Erro: usuário não autenticado");
       return;
     }
 
     const stockErrors: string[] = [];
-    
+
     for (const item of items) {
       if (!item.pharmacyProductId) {
-        alert(`Produto "${item.name}" não possui pharmacyProductId. Por favor, remova o item do carrinho e adicione novamente.`);
+        alert(
+          `Produto "${item.name}" não está disponível. Remova o item do carrinho e adicione novamente.`,
+        );
         return;
       }
 
-      const availableStock = productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
+      const availableStock =
+        productStocks[item.id] ??
+        (item as CartItem & { stock?: number | null }).stock;
       if (availableStock !== undefined && availableStock !== null) {
         if (item.quantity > availableStock) {
-          stockErrors.push(`Estoque insuficiente para "${item.name}". Quantidade disponível: ${availableStock}, quantidade solicitada: ${item.quantity}`);
+          stockErrors.push(
+            `Estoque insuficiente para "${item.name}". Quantidade disponível: ${availableStock}, quantidade solicitada: ${item.quantity}`,
+          );
         }
       }
     }
@@ -165,11 +198,16 @@ export function CheckoutForm() {
     try {
       console.log("Cart items:", items);
 
-      const products = items.map(item => {
-        console.log("Cart item ID:", item.id, "Pharmacy Product ID:", item.pharmacyProductId);
+      const products = items.map((item) => {
+        console.log(
+          "Cart item ID:",
+          item.id,
+          "Pharmacy Product ID:",
+          item.pharmacyProductId,
+        );
         return {
           pharmacy_product_id: item.pharmacyProductId,
-          amount: item.quantity
+          amount: item.quantity,
         };
       });
 
@@ -187,7 +225,7 @@ export function CheckoutForm() {
           state: formData.state,
           postal_code: formData.zipCode,
         },
-        products: products
+        products: products,
       };
 
       console.log("Request body:", JSON.stringify(requestBody, null, 2));
@@ -196,7 +234,7 @@ export function CheckoutForm() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          "Authorization": `Bearer ${user.accessToken}`,
+          Authorization: `Bearer ${user.accessToken}`,
         },
         body: JSON.stringify(requestBody),
       });
@@ -207,9 +245,11 @@ export function CheckoutForm() {
       if (!response.ok) {
         console.error("API Error:", data);
         let errorMessage = "Erro ao criar pedido";
-        
+
         if (data.errors && Array.isArray(data.errors)) {
-          const stockErrors = data.errors.filter((err: string) => err.includes("Estoque insuficiente"));
+          const stockErrors = data.errors.filter((err: string) =>
+            err.includes("Estoque insuficiente"),
+          );
           if (stockErrors.length > 0) {
             errorMessage = stockErrors.join("\n");
           } else {
@@ -220,7 +260,7 @@ export function CheckoutForm() {
         } else if (typeof data.errors === "string") {
           errorMessage = data.errors;
         }
-        
+
         alert(`Erro: ${errorMessage}`);
         setIsSubmitting(false);
         return;
@@ -228,12 +268,15 @@ export function CheckoutForm() {
 
       const modal = document.createElement("dialog");
       modal.style.padding = "2rem";
-      modal.style.borderRadius = "8px";
+      modal.style.borderRadius = "12px";
+      modal.style.background = "#ffffff";
+      modal.style.color = "#2b2b2b";
+      modal.style.border = "1px solid #e2d8cc";
       modal.innerHTML = `
-      <div style="text-align:center;">
-        <h2 style="color:#16a34a; font-size:1.5rem; margin-bottom:1rem;">Pedido realizado com sucesso!</h2>
-        <p style="margin-bottom:1rem;">${items.length} produtos foram comprados.</p>
-        <button id="close-modal" style="background:#16a34a; color:white; padding:0.5rem 1.5rem; border:none; border-radius:4px; font-size:1rem; cursor:pointer;">OK</button>
+      <div style="text-align:center;font-family:system-ui,sans-serif;">
+        <h2 style="color:#a47148;font-size:1.5rem;margin-bottom:1rem;font-weight:700;">Pedido realizado com sucesso!</h2>
+        <p style="margin-bottom:1rem;color:#6f6f6f;">${items.length} produtos foram comprados.</p>
+        <button id="close-modal" style="background:#a47148;color:#ffffff;padding:0.6rem 1.25rem;border:none;border-radius:10px;font-size:1rem;cursor:pointer;font-weight:600;">OK</button>
       </div>
       `;
       document.body.appendChild(modal);
@@ -258,7 +301,7 @@ export function CheckoutForm() {
           <h1 className="text-2xl font-bold text-theme-primary mb-4">
             Seu carrinho está vazio
           </h1>
-          <p className="text-gray-600 mb-8">
+          <p className="text-muted-foreground mb-8">
             Adicione alguns produtos para continuar com a compra.
           </p>
           <Button
@@ -281,7 +324,7 @@ export function CheckoutForm() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mt-4 sm:mt-8">
         {/* Cart Items */}
         <div>
-          <Card>
+          <Card className="card-static">
             <CardHeader className="p-3 sm:p-6">
               <CardTitle className="text-base sm:text-lg text-theme-primary">
                 Seus Produtos ({items.length} itens)
@@ -301,7 +344,9 @@ export function CheckoutForm() {
 
                       <div className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden">
                         <Image
-                          src={item.image || "/placeholder.svg?height=80&width=80"}
+                          src={
+                            item.image || "/placeholder.svg?height=80&width=80"
+                          }
                           alt={item.name}
                           width={80}
                           height={80}
@@ -323,8 +368,14 @@ export function CheckoutForm() {
                         <p className="text-xs sm:text-sm text-theme-secondary">
                           Quantidade: {item.quantity}
                           {(() => {
-                            const availableStock = productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
-                            if (availableStock !== undefined && availableStock !== null) {
+                            const availableStock =
+                              productStocks[item.id] ??
+                              (item as CartItem & { stock?: number | null })
+                                .stock;
+                            if (
+                              availableStock !== undefined &&
+                              availableStock !== null
+                            ) {
                               return ` / Estoque: ${availableStock}`;
                             }
                             return "";
@@ -332,14 +383,16 @@ export function CheckoutForm() {
                         </p>
                         {(item.pharmacyName || pharmacyNames[item.id]) && (
                           <p className="text-xs sm:text-sm text-theme-secondary mt-1">
-                            Farmácia: {item.pharmacyName || pharmacyNames[item.id]}
+                            Loja: {item.pharmacyName || pharmacyNames[item.id]}
                           </p>
                         )}
-                        {loadingPharmacyNames[item.id] && !item.pharmacyName && !pharmacyNames[item.id] && (
-                          <p className="text-xs sm:text-sm text-gray-400 mt-1">
-                            Carregando farmácia...
-                          </p>
-                        )}
+                        {loadingPharmacyNames[item.id] &&
+                          !item.pharmacyName &&
+                          !pharmacyNames[item.id] && (
+                            <p className="text-xs sm:text-sm text-gray-400 mt-1">
+                              Carregando loja...
+                            </p>
+                          )}
                         <p className="text-xs sm:text-sm font-semibold text-theme-secondary mt-1">
                           Subtotal: R${" "}
                           {(
@@ -359,14 +412,22 @@ export function CheckoutForm() {
                         onClick={() =>
                           updateQuantity(item.id, item.quantity - 1)
                         }
-                        className="text-theme-secondary hover:bg-theme-primary h-8 w-8 p-0"
+                        className="text-theme-secondary hover:bg-muted h-8 w-8 p-0"
                       >
                         <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
                       </Button>
-                      <span className="w-6 sm:w-8 text-center text-sm">{item.quantity}</span>
+                      <span className="w-6 sm:w-8 text-center text-sm">
+                        {item.quantity}
+                      </span>
                       {(() => {
-                        const availableStock = productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
-                        const maxQuantity = availableStock !== undefined && availableStock !== null ? availableStock : Infinity;
+                        const availableStock =
+                          productStocks[item.id] ??
+                          (item as CartItem & { stock?: number | null }).stock;
+                        const maxQuantity =
+                          availableStock !== undefined &&
+                          availableStock !== null
+                            ? availableStock
+                            : Infinity;
                         const isMaxReached = item.quantity >= maxQuantity;
                         return (
                           <Button
@@ -376,12 +437,18 @@ export function CheckoutForm() {
                               if (!isMaxReached) {
                                 updateQuantity(item.id, item.quantity + 1);
                               } else {
-                                alert(`Estoque máximo disponível: ${maxQuantity}`);
+                                alert(
+                                  `Estoque máximo disponível: ${maxQuantity}`,
+                                );
                               }
                             }}
                             disabled={isMaxReached}
-                            className="text-theme-secondary hover:bg-theme-primary h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={isMaxReached ? `Estoque máximo: ${maxQuantity}` : "Aumentar quantidade"}
+                            className="text-theme-secondary hover:bg-muted h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            title={
+                              isMaxReached
+                                ? `Estoque máximo: ${maxQuantity}`
+                                : "Aumentar quantidade"
+                            }
                           >
                             <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
                           </Button>
@@ -404,7 +471,7 @@ export function CheckoutForm() {
 
               <div className="flex justify-between items-center text-lg sm:text-xl font-bold">
                 <span className="text-theme-primary">Total:</span>
-                <span className="text-theme-primary">
+                <span className="price text-xl sm:text-2xl">
                   R$ {getTotalPrice().toFixed(2).replace(".", ",")}
                 </span>
               </div>
@@ -415,178 +482,182 @@ export function CheckoutForm() {
         {/* Checkout Form or Login Message */}
         <div>
           {user ? (
-            <Card>
-              <CardHeader className="bg-theme-primary p-3 sm:p-6">
+            <Card className="card-static">
+              <CardHeader className="bg-muted/60 border-b border-border p-3 sm:p-6">
                 <CardTitle className="text-base sm:text-lg text-theme-primary">
                   Dados de Entrega
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 sm:p-6">
-              <form onSubmit={handleSubmit} className="space-y-3 sm:space-y-4 mt-2 sm:mt-4">
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                    Rua *
-                  </label>
-                  <Input
-                    name="street"
-                    value={formData.street}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Nome da rua"
-                    className="focus:border-theme-secondary text-sm sm:text-base"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Número *
-                    </label>
-                    <Input
-                      name="street_number"
-                      value={formData.street_number}
-                      onChange={handleInputChange}
-                      required
-                      placeholder="123"
-                      className="focus:border-theme-secondary text-sm sm:text-base"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Complemento
-                    </label>
-                    <Input
-                      name="address_details"
-                      value={formData.address_details}
-                      onChange={handleInputChange}
-                      placeholder="Apto, Bloco, etc"
-                      className="focus:border-theme-secondary text-sm sm:text-base"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                    Bairro *
-                  </label>
-                  <Input
-                    name="district"
-                    value={formData.district}
-                    onChange={handleInputChange}
-                    required
-                    placeholder="Nome do bairro"
-                    className="focus:border-theme-secondary text-sm sm:text-base"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Cidade *
-                    </label>
-                    <Input
-                      name="city"
-                      value={formData.city}
-                      onChange={handleInputChange}
-                      required
-                      placeholder="Sua cidade"
-                      className="focus:border-theme-secondary text-sm sm:text-base"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Estado *
-                    </label>
-                    <Input
-                      name="state"
-                      value={formData.state}
-                      onChange={handleInputChange}
-                      required
-                      placeholder="UF"
-                      maxLength={2}
-                      className="focus:border-theme-secondary text-sm sm:text-base"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      CEP *
-                    </label>
-                    <Input
-                      name="zipCode"
-                      value={formData.zipCode}
-                      onChange={handleInputChange}
-                      required
-                      placeholder="00000-000"
-                      className="focus:border-theme-secondary text-sm sm:text-base"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                    Forma de Pagamento *
-                  </label>
-                  <select
-                    name="paymentMethod"
-                    value={formData.paymentMethod}
-                    onChange={handleInputChange}
-                    className="w-full p-2 sm:p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-theme-secondary focus:border-theme-secondary text-sm sm:text-base"
-                    required
-                  >
-                    <option value="pix">PIX</option>
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="credit">Cartão de Crédito</option>
-                    <option value="debit">Cartão de Débito</option>
-                  </select>
-                </div>
-
-                <Button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
+                <form
+                  onSubmit={handleSubmit}
+                  className="space-y-3 sm:space-y-4 mt-2 sm:mt-4"
                 >
-                  {isSubmitting
-                    ? "Processando..."
-                    : `Finalizar Compra - R$ ${getTotalPrice()
-                        .toFixed(2)
-                        .replace(".", ",")} (${items.length} produtos)`}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Rua *
+                    </label>
+                    <Input
+                      name="street"
+                      value={formData.street}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Nome da rua"
+                      className="focus:border-theme-accent text-sm sm:text-base"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                        Número *
+                      </label>
+                      <Input
+                        name="street_number"
+                        value={formData.street_number}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="123"
+                        className="focus:border-theme-accent text-sm sm:text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                        Complemento
+                      </label>
+                      <Input
+                        name="address_details"
+                        value={formData.address_details}
+                        onChange={handleInputChange}
+                        placeholder="Apto, Bloco, etc"
+                        className="focus:border-theme-accent text-sm sm:text-base"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Bairro *
+                    </label>
+                    <Input
+                      name="district"
+                      value={formData.district}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Nome do bairro"
+                      className="focus:border-theme-accent text-sm sm:text-base"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                        Cidade *
+                      </label>
+                      <Input
+                        name="city"
+                        value={formData.city}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="Sua cidade"
+                        className="focus:border-theme-accent text-sm sm:text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                        Estado *
+                      </label>
+                      <Input
+                        name="state"
+                        value={formData.state}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="UF"
+                        maxLength={2}
+                        className="focus:border-theme-accent text-sm sm:text-base"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                        CEP *
+                      </label>
+                      <Input
+                        name="zipCode"
+                        value={formData.zipCode}
+                        onChange={handleInputChange}
+                        required
+                        placeholder="00000-000"
+                        className="focus:border-theme-accent text-sm sm:text-base"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Forma de Pagamento *
+                    </label>
+                    <select
+                      name="paymentMethod"
+                      value={formData.paymentMethod}
+                      onChange={handleInputChange}
+                      className="w-full p-2 sm:p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-theme-accent focus:border-theme-accent text-sm sm:text-base"
+                      required
+                    >
+                      <option value="pix">PIX</option>
+                      <option value="dinheiro">Dinheiro</option>
+                      <option value="credit">Cartão de Crédito</option>
+                      <option value="debit">Cartão de Débito</option>
+                    </select>
+                  </div>
+
+                  <Button
+                    type="submit"
+                    disabled={isSubmitting}
+                    className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
+                  >
+                    {isSubmitting
+                      ? "Processando..."
+                      : `Finalizar Compra - R$ ${getTotalPrice()
+                          .toFixed(2)
+                          .replace(".", ",")} (${items.length} produtos)`}
+                  </Button>
+                </form>
+              </CardContent>
+            </Card>
           ) : (
-          <Card>
-            <CardHeader className="bg-theme-primary p-3 sm:p-6">
-              <CardTitle className="text-base sm:text-lg text-theme-primary">
-                Dados de Entrega
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="p-3 sm:p-6">
-              <div className="text-center py-6 sm:py-8">
-                <h2 className="text-lg sm:text-xl font-bold text-theme-primary mb-3 sm:mb-4">
-                  Faça login para finalizar a compra
-                </h2>
-                <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 px-2">
-                  Você precisa estar logado para finalizar sua compra. Crie uma conta gratuitamente ou faça login se já tiver uma.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
-                  <Button
-                    onClick={() => router.push("/login")}
-                    className="btn-theme-primary w-full sm:w-auto"
-                  >
-                    Fazer Login
-                  </Button>
-                  <Button
-                    onClick={() => router.push("/register")}
-                    variant="outline"
-                    className="border-theme-primary text-theme-primary hover:bg-theme-primary hover:text-white w-full sm:w-auto"
-                  >
-                    Criar Conta
-                  </Button>
+            <Card className="card-static">
+              <CardHeader className="bg-muted/60 border-b border-border p-3 sm:p-6">
+                <CardTitle className="text-base sm:text-lg text-theme-primary">
+                  Dados de Entrega
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-3 sm:p-6">
+                <div className="text-center py-6 sm:py-8">
+                  <h2 className="text-lg sm:text-xl font-bold text-theme-primary mb-3 sm:mb-4">
+                    Faça login para finalizar a compra
+                  </h2>
+                  <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 px-2">
+                    Você precisa estar logado para finalizar sua compra. Crie
+                    uma conta gratuitamente ou faça login se já tiver uma.
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
+                    <Button
+                      onClick={() => router.push("/login")}
+                      className="btn-theme-primary w-full sm:w-auto"
+                    >
+                      Fazer Login
+                    </Button>
+                    <Button
+                      onClick={() => router.push("/register")}
+                      variant="outline"
+                      className="w-full sm:w-auto rounded-[10px] border-border bg-transparent text-foreground hover:bg-[var(--bg-secondary)]"
+                    >
+                      Criar Conta
+                    </Button>
+                  </div>
                 </div>
-              </div>
-            </CardContent>
-          </Card>
+              </CardContent>
+            </Card>
           )}
         </div>
       </div>

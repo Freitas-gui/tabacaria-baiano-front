@@ -55,14 +55,14 @@ export function OrdersPage() {
 
   const mapStatus = (status: string): Order["status"] => {
     if (!status) return "Aguardando Confirmação";
-    
+
     const statusMap: Record<string, Order["status"]> = {
-      "Entregue": "Entregue",
+      Entregue: "Entregue",
       "Saiu para entrega": "Saiu para entrega",
-      "Preparando": "Preparando",
+      Preparando: "Preparando",
       "Aguardando Confirmação": "Aguardando Confirmação",
-      "Confirmado": "Confirmado",
-      "Cancelado": "Cancelado",
+      Confirmado: "Confirmado",
+      Cancelado: "Cancelado",
       delivered: "Entregue",
       in_transit: "Saiu para entrega",
       preparing: "Preparando",
@@ -110,16 +110,18 @@ export function OrdersPage() {
 
       if (data.success && Array.isArray(data.data)) {
         const mappedOrders: Order[] = data.data.map((order: any) => {
-          const items: OrderItem[] = order.products?.map((product: any) => ({
-            id: product.id || product.product?.id || "",
-            name: product.product?.name || "Produto",
-            price: product.price || "0",
-            quantity: product.amount || 0,
-            image:
-              product.product?.images?.[0] ||
-              "/placeholder.svg?height=80&width=80",
-            pharmacyName: product.pharmacy?.name || order.pharmacy?.name || null,
-          })) || [];
+          const items: OrderItem[] =
+            order.products?.map((product: any) => ({
+              id: product.id || product.product?.id || "",
+              name: product.product?.name || "Produto",
+              price: product.price || "0",
+              quantity: product.amount || 0,
+              image:
+                product.product?.images?.[0] ||
+                "/placeholder.svg?height=80&width=80",
+              pharmacyName:
+                product.pharmacy?.name || order.pharmacy?.name || null,
+            })) || [];
 
           const address = order.address;
           const deliveryAddress = address
@@ -162,13 +164,16 @@ export function OrdersPage() {
 
     setLoadingOrderDetails(true);
     try {
-      const response = await fetch(`${API_BASE_URL}/api/customer/orders/${orderId}`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${user.accessToken}`,
+      const response = await fetch(
+        `${API_BASE_URL}/api/customer/orders/${orderId}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${user.accessToken}`,
+          },
         },
-      });
+      );
 
       if (!response.ok) {
         throw new Error("Erro ao carregar detalhes do pedido");
@@ -178,17 +183,19 @@ export function OrdersPage() {
 
       if (data.success && data.data) {
         const order = data.data;
-        
-        const items: OrderItem[] = order.products?.map((product: any) => ({
-          id: product.id || product.product?.id || "",
-          name: product.product?.name || "Produto",
-          price: product.price || "0",
-          quantity: product.amount || 0,
-          image:
-            product.product?.images?.[0] ||
-            "/placeholder.svg?height=80&width=80",
-          pharmacyName: product.pharmacy?.name || order.pharmacy?.name || null,
-        })) || [];
+
+        const items: OrderItem[] =
+          order.products?.map((product: any) => ({
+            id: product.id || product.product?.id || "",
+            name: product.product?.name || "Produto",
+            price: product.price || "0",
+            quantity: product.amount || 0,
+            image:
+              product.product?.images?.[0] ||
+              "/placeholder.svg?height=80&width=80",
+            pharmacyName:
+              product.pharmacy?.name || order.pharmacy?.name || null,
+          })) || [];
 
         const address = order.address;
         const deliveryAddress = address
@@ -219,38 +226,38 @@ export function OrdersPage() {
   const getStatusIcon = (status: Order["status"]) => {
     switch (status) {
       case "Entregue":
-        return <CheckCircle className="w-4 h-4 text-green-600" />;
+        return <CheckCircle className="w-4 h-4 text-emerald-700" />;
       case "Saiu para entrega":
-        return <Truck className="w-4 h-4 text-blue-600" />;
+        return <Truck className="w-4 h-4 text-amber-700" />;
       case "Preparando":
-        return <Package className="w-4 h-4 text-orange-600" />;
+        return <Package className="w-4 h-4 text-[#A47148]" />;
       case "Aguardando Confirmação":
-        return <Clock className="w-4 h-4 text-yellow-600" />;
+        return <Clock className="w-4 h-4 text-amber-800/90" />;
       case "Confirmado":
-        return <CheckCircle className="w-4 h-4 text-blue-600" />;
+        return <CheckCircle className="w-4 h-4 text-sky-800" />;
       case "Cancelado":
-        return <Clock className="w-4 h-4 text-red-600" />;
+        return <Clock className="w-4 h-4 text-red-700" />;
       default:
-        return <Clock className="w-4 h-4 text-gray-600" />;
+        return <Clock className="w-4 h-4 text-muted-foreground" />;
     }
   };
 
   const getStatusColor = (status: Order["status"]) => {
     switch (status) {
       case "Entregue":
-        return "bg-green-100 text-green-800 border-green-200";
+        return "bg-emerald-50 text-emerald-900 border-emerald-200";
       case "Saiu para entrega":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-amber-50 text-amber-900 border-amber-200";
       case "Preparando":
-        return "bg-orange-100 text-orange-800 border-orange-200";
+        return "bg-orange-50 text-orange-900 border-orange-200";
       case "Aguardando Confirmação":
-        return "bg-yellow-100 text-yellow-800 border-yellow-200";
+        return "bg-stone-100 text-stone-800 border-stone-200";
       case "Confirmado":
-        return "bg-blue-100 text-blue-800 border-blue-200";
+        return "bg-sky-50 text-sky-900 border-sky-200";
       case "Cancelado":
-        return "bg-red-100 text-red-800 border-red-200";
+        return "bg-red-50 text-red-900 border-red-200";
       default:
-        return "bg-gray-100 text-gray-800 border-gray-200";
+        return "bg-muted text-muted-foreground border-border";
     }
   };
 
@@ -268,7 +275,9 @@ export function OrdersPage() {
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-theme-primary mx-auto"></div>
-          <p className="text-gray-600 mt-4">Carregando detalhes do pedido...</p>
+          <p className="text-muted-foreground mt-4">
+            Carregando detalhes do pedido...
+          </p>
         </div>
       </div>
     );
@@ -293,8 +302,8 @@ export function OrdersPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-8">
           {/* Order Details */}
           <div className="lg:col-span-2">
-            <Card className="mb-6">
-              <CardHeader className="bg-theme-primary">
+            <Card className="card-static mb-6">
+              <CardHeader className="bg-muted/60 border-b border-border">
                 <div className="flex items-center justify-between">
                   <div>
                     <CardTitle className="text-theme-primary">
@@ -319,7 +328,7 @@ export function OrdersPage() {
                   {selectedOrder.items.map((item, index) => (
                     <div key={item.id}>
                       <div className="flex items-center space-x-4">
-                        <div className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden border">
+                        <div className="flex-shrink-0 aspect-square bg-muted rounded overflow-hidden border border-border">
                           <Image
                             src={item.image || "/placeholder.svg"}
                             alt={item.name}
@@ -334,16 +343,16 @@ export function OrdersPage() {
                           </h3>
                           <div className="flex items-center justify-between mt-2">
                             <div className="flex flex-col">
-                              <span className="text-sm text-gray-600">
+                              <span className="text-sm text-muted-foreground">
                                 Quantidade: {item.quantity}
                               </span>
                               {item.pharmacyName && (
                                 <span className="text-xs sm:text-sm text-theme-secondary mt-1">
-                                  Farmácia: {item.pharmacyName}
+                                  Loja: {item.pharmacyName}
                                 </span>
                               )}
                             </div>
-                            <span className="font-semibold text-theme-primary">
+                            <span className="price text-base">
                               R$ {item.price}
                             </span>
                           </div>
@@ -358,9 +367,9 @@ export function OrdersPage() {
 
                 <Separator className="my-6" />
 
-                <div className="flex justify-between items-center text-xl font-bold">
-                  <span className="text-theme-primary">Total:</span>
-                  <span className="text-theme-primary">
+                <div className="flex justify-between items-center text-xl">
+                  <span className="text-theme-primary font-bold">Total:</span>
+                  <span className="price text-xl">
                     R$ {selectedOrder.total}
                   </span>
                 </div>
@@ -372,7 +381,7 @@ export function OrdersPage() {
           <div className="space-y-6">
             {/* Delivery Status */}
             {selectedOrder.estimatedDelivery && (
-              <Card>
+              <Card className="card-static">
                 <CardHeader>
                   <CardTitle className="text-theme-primary flex items-center">
                     <Truck className="w-5 h-5 mr-2" />
@@ -399,7 +408,7 @@ export function OrdersPage() {
             )}
 
             {/* Payment Info */}
-            <Card>
+            <Card className="card-static">
               <CardHeader>
                 <CardTitle className="text-theme-primary flex items-center">
                   <CreditCard className="w-5 h-5 mr-2" />
@@ -412,7 +421,7 @@ export function OrdersPage() {
             </Card>
 
             {/* Order Address */}
-            <Card>
+            <Card className="card-static">
               <CardHeader>
                 <CardTitle className="text-theme-primary flex items-center">
                   <MapPin className="w-5 h-5 mr-2" />
@@ -422,7 +431,9 @@ export function OrdersPage() {
               <CardContent>
                 <div className="flex items-start space-x-2">
                   <MapPin className="w-4 h-4 text-theme-secondary mt-0.5" />
-                  <span className="text-sm">{selectedOrder.deliveryAddress}</span>
+                  <span className="text-sm">
+                    {selectedOrder.deliveryAddress}
+                  </span>
                 </div>
               </CardContent>
             </Card>
@@ -438,37 +449,39 @@ export function OrdersPage() {
         <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary mb-2">
           Meus Pedidos
         </h1>
-        <p className="text-sm sm:text-base text-gray-600">Acompanhe o status dos seus pedidos</p>
+        <p className="text-sm sm:text-base text-muted-foreground">
+          Acompanhe o status dos seus pedidos
+        </p>
       </div>
 
       {loading ? (
-        <Card className="text-center py-12">
+        <Card className="card-static text-center py-12">
           <CardContent>
             <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-theme-primary mx-auto"></div>
-            <p className="text-gray-600 mt-4">Carregando pedidos...</p>
+            <p className="text-muted-foreground mt-4">Carregando pedidos...</p>
           </CardContent>
         </Card>
       ) : error ? (
-        <Card className="text-center py-12">
+        <Card className="card-static text-center py-12">
           <CardContent>
-            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <Package className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-theme-primary mb-2">
               Erro ao carregar pedidos
             </h3>
-            <p className="text-gray-500 mb-6">{error}</p>
+            <p className="text-muted-foreground mb-6">{error}</p>
             <Button onClick={() => loadOrders()} className="btn-theme-primary">
               Tentar Novamente
             </Button>
           </CardContent>
         </Card>
       ) : orders.length === 0 ? (
-        <Card className="text-center py-12">
+        <Card className="card-static text-center py-12">
           <CardContent>
-            <Package className="w-16 h-16 text-gray-300 mx-auto mb-4" />
+            <Package className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-theme-primary mb-2">
               Nenhum pedido encontrado
             </h3>
-            <p className="text-gray-500 mb-6">
+            <p className="text-muted-foreground mb-6">
               Você ainda não fez nenhum pedido.
             </p>
             <Button className="btn-theme-primary">Começar a Comprar</Button>
@@ -479,7 +492,7 @@ export function OrdersPage() {
           {orders.map((order) => (
             <Card
               key={order.id}
-              className="card-hover transition-shadow cursor-pointer"
+              className="cursor-pointer"
               onClick={() => fetchOrderDetails(order.id)}
             >
               <CardContent className="p-3 sm:p-6">
@@ -488,7 +501,7 @@ export function OrdersPage() {
                     <h3 className="font-semibold text-sm sm:text-base text-theme-primary">
                       Pedido {order.orderNumber}
                     </h3>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-gray-600 mt-1">
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 text-xs sm:text-sm text-muted-foreground mt-1">
                       <div className="flex items-center space-x-1">
                         <Calendar className="w-3 h-3 sm:w-4 sm:h-4" />
                         <span>{formatDate(order.date)}</span>
@@ -511,7 +524,7 @@ export function OrdersPage() {
                         <span className="text-xs">{order.status}</span>
                       </div>
                     </Badge>
-                    <div className="text-base sm:text-lg font-bold text-theme-primary">
+                    <div className="price text-base sm:text-lg">
                       R$ {order.total}
                     </div>
                   </div>
@@ -519,7 +532,10 @@ export function OrdersPage() {
 
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
                   {order.items.slice(0, 3).map((item, index) => (
-                    <div key={item.id} className="flex items-center space-x-2 flex-shrink-0">
+                    <div
+                      key={item.id}
+                      className="flex items-center space-x-2 flex-shrink-0"
+                    >
                       <Image
                         src={item.image || "/placeholder.svg"}
                         alt={item.name}
@@ -527,7 +543,7 @@ export function OrdersPage() {
                         height={40}
                         className="rounded border w-8 h-8 sm:w-10 sm:h-10 object-cover"
                       />
-                      <div className="text-xs text-gray-600">
+                      <div className="text-xs text-muted-foreground">
                         <div className="font-medium truncate max-w-[100px] sm:max-w-[120px]">
                           {item.name}
                         </div>
@@ -536,7 +552,7 @@ export function OrdersPage() {
                     </div>
                   ))}
                   {order.items.length > 3 && (
-                    <div className="text-xs sm:text-sm text-gray-500">
+                    <div className="text-xs sm:text-sm text-muted-foreground/80">
                       +{order.items.length - 3}{" "}
                       {order.items.length - 3 === 1 ? "item" : "itens"}
                     </div>
@@ -546,15 +562,15 @@ export function OrdersPage() {
                 {order.estimatedDelivery && (
                   <div className="flex items-center space-x-2 text-xs sm:text-sm text-theme-secondary mb-2">
                     <Clock className="w-3 h-3 sm:w-4 sm:h-4 flex-shrink-0" />
-                    <span className="break-words">Previsão de entrega: {order.estimatedDelivery}</span>
+                    <span className="break-words">
+                      Previsão de entrega: {order.estimatedDelivery}
+                    </span>
                   </div>
                 )}
 
-                <div className="flex items-start space-x-2 text-xs sm:text-sm text-gray-600 mt-3 sm:mt-4 pt-3 sm:pt-4 border-t">
+                <div className="flex items-start space-x-2 text-xs sm:text-sm text-muted-foreground mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-border">
                   <MapPin className="w-3 h-3 sm:w-4 sm:h-4 mt-0.5 flex-shrink-0" />
-                  <span className="break-words">
-                    {order.deliveryAddress}
-                  </span>
+                  <span className="break-words">{order.deliveryAddress}</span>
                 </div>
               </CardContent>
             </Card>

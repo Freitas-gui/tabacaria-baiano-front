@@ -8,12 +8,14 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useCart } from "@/contexts/cart-context";
 import { API_BASE_URL } from "@/lib/api";
-
-type Category = {
-  id: string;
-  name: string;
-  image?: string | null;
-};
+import type { CategoryParent } from "@/lib/categories";
+import {
+  findLeafByParam,
+  normalizeCategoryParents,
+  pickCardImage,
+  productMatchesAnyChild,
+  productMatchesLeaf,
+} from "@/lib/categories";
 
 // >>> Product normalizado para o front
 type Product = {
@@ -43,10 +45,14 @@ export function HomepageContent() {
   const { addToCart } = useCart();
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedParentId, setSelectedParentId] = useState<string | null>(
+    null,
+  );
   const [searchQuery, setSearchQuery] = useState<string | null>(null);
 
-  // --------- Categorias (como você já fez) ---------
-  const [categories, setCategories] = useState<Category[]>([]);
+  const [parentCategories, setParentCategories] = useState<CategoryParent[]>(
+    [],
+  );
   const [loadingCategories, setLoadingCategories] = useState<boolean>(false);
   const [categoriesError, setCategoriesError] = useState<string | null>(null);
 
@@ -60,17 +66,9 @@ export function HomepageContent() {
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       const data = Array.isArray(json?.data) ? json.data : [];
-      const normalized: Category[] = data
-        .map((c: any) => ({
-          id: String(c?.id ?? ""),
-          name: String(c?.name ?? "").trim(),
-          image: typeof c?.image === "string" ? c.image : null,
-        }))
-        .filter((c: Category) => c.id && c.name);
-      setCategories(normalized);
-    } catch (e: any) {
-      console.error("Error loading categories:", e);
-      // setCategoriesError("Não foi possível carregar as categorias. Tente novamente.");
+      setParentCategories(normalizeCategoryParents(data));
+    } catch {
+
     } finally {
       setLoadingCategories(false);
     }
@@ -114,14 +112,16 @@ export function HomepageContent() {
               typeof it === "string"
                 ? it
                 : typeof it?.url === "string"
-                ? it.url
-                : null
+                  ? it.url
+                  : null,
             )
             .filter(Boolean);
 
           return {
             id: String(p?.id ?? ""),
-            pharmacyProductId: p?.pharmacyProductId ? String(p.pharmacyProductId) : null,
+            pharmacyProductId: p?.pharmacyProductId
+              ? String(p.pharmacyProductId)
+              : null,
             reference: p?.reference ? String(p.reference) : null,
             name: String(p?.name ?? "").trim(),
             description: p?.description ? String(p.description) : null,
@@ -154,15 +154,40 @@ export function HomepageContent() {
     return () => ac.abort();
   }, [loadProducts]);
 
-  // --------- Leitura de querystring ----------
   useEffect(() => {
     const categoryFromUrl = searchParams.get("category");
+    const parentFromUrl = searchParams.get("parent");
     const searchFromUrl = searchParams.get("search");
     setSearchQuery(searchFromUrl);
     setSelectedCategory(categoryFromUrl);
+    setSelectedParentId(parentFromUrl);
   }, [searchParams]);
 
-  // --------- >>> Trocar allProducts -> products ----------
+  const highlightedParentId = useMemo(() => {
+    if (selectedParentId) return selectedParentId;
+    if (!selectedCategory) return null;
+    const leaf = findLeafByParam(parentCategories, selectedCategory);
+    return leaf?.parentId ?? null;
+  }, [selectedParentId, selectedCategory, parentCategories]);
+
+  const filterLabel = useMemo(() => {
+    if (searchQuery) return null;
+    if (selectedParentId) {
+      const p = parentCategories.find((x) => x.id === selectedParentId);
+      return p?.name ?? null;
+    }
+    if (selectedCategory) {
+      const leaf = findLeafByParam(parentCategories, selectedCategory);
+      return leaf?.name ?? selectedCategory;
+    }
+    return null;
+  }, [
+    searchQuery,
+    selectedParentId,
+    selectedCategory,
+    parentCategories,
+  ]);
+
   const filteredProducts = useMemo(() => {
     const source = products;
 
@@ -174,22 +199,43 @@ export function HomepageContent() {
           .toLowerCase()
           .includes(q);
         const keywordMatch = (product.keywords ?? []).some((k) =>
-          String(k).toLowerCase().includes(q)
+          String(k).toLowerCase().includes(q),
         );
         return nameMatch || categoryMatch || keywordMatch;
       });
-    } else if (selectedCategory) {
+    }
+
+    if (selectedParentId) {
+      const parent = parentCategories.find((p) => p.id === selectedParentId);
+      if (!parent) return source;
+      return source.filter((p) =>
+        productMatchesAnyChild(p.category, parent.children),
+      );
+    }
+
+    if (selectedCategory) {
+      const leaf = findLeafByParam(parentCategories, selectedCategory);
+      if (leaf) {
+        return source.filter((p) => productMatchesLeaf(p.category, leaf));
+      }
       return source.filter((p) => p.category === selectedCategory);
     }
-    return source;
-  }, [products, searchQuery, selectedCategory]);
 
-  const handleCategoryClick = (categoryName: string) => {
-    if (selectedCategory === categoryName) {
+    return source;
+  }, [
+    products,
+    searchQuery,
+    selectedCategory,
+    selectedParentId,
+    parentCategories,
+  ]);
+
+  const handleParentCardClick = (parentId: string) => {
+    if (selectedParentId === parentId && !selectedCategory) {
       router.push("/");
-    } else {
-      router.push(`/?category=${encodeURIComponent(categoryName)}`);
+      return;
     }
+    router.push(`/?parent=${encodeURIComponent(parentId)}`);
   };
 
   const handleShowAllProducts = () => {
@@ -204,15 +250,15 @@ export function HomepageContent() {
   const getDisplayTitle = () =>
     searchQuery
       ? `Resultados da busca: "${searchQuery}" (${filteredProducts.length} produtos encontrados)`
-      : selectedCategory
-      ? `Produtos: ${selectedCategory} (${filteredProducts.length} produtos)`
-      : `Produtos: Todos (${filteredProducts.length} produtos)`;
+      : filterLabel
+        ? `Produtos: ${filterLabel} (${filteredProducts.length} produtos)`
+        : `Produtos: Todos (${filteredProducts.length} produtos)`;
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
       {/* Search Results Header */}
       {searchQuery && (
-        <div className="mb-6 sm:mb-8 p-3 sm:p-4 bg-theme-primary border rounded-lg">
+        <div className="mb-6 sm:mb-8 p-3 sm:p-4 bg-[var(--bg-secondary)] border border-border rounded-[14px]">
           <div className="flex items-center space-x-2">
             <Search className="w-4 h-4 sm:w-5 sm:h-5 text-theme-secondary flex-shrink-0" />
             <h2 className="text-base sm:text-lg font-semibold text-theme-primary break-words">
@@ -229,7 +275,7 @@ export function HomepageContent() {
 
       {/* Categories - Hide when searching */}
       {!searchQuery && (
-        <div className="mb-8 sm:mb-12">
+        <div className="hidden sm:mb-12 sm:block">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-2">
             <h2 className="text-lg sm:text-xl font-semibold text-theme-primary">
               Categorias:
@@ -237,7 +283,9 @@ export function HomepageContent() {
 
             {categoriesError && (
               <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3">
-                <span className="text-xs sm:text-sm text-red-600">{categoriesError}</span>
+                <span className="text-xs sm:text-sm text-red-600">
+                  {categoriesError}
+                </span>
                 <Button
                   variant="outline"
                   onClick={() => loadCategories()}
@@ -250,50 +298,46 @@ export function HomepageContent() {
           </div>
 
           {loadingCategories ? (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4">
-              {Array.from({ length: 7 }).map((_, i) => (
+            <div className="grid grid-cols-3 gap-4 md:grid-cols-4 lg:grid-cols-6">
+              {Array.from({ length: 6 }).map((_, i) => (
                 <Card
                   key={i}
-                  className="p-2 sm:p-3 min-h-[120px] sm:min-h-[140px] animate-pulse border border-gray-200"
+                  className="card-static min-h-[140px] animate-pulse p-4"
                 >
-                  <div className="h-[70px] sm:h-[90px] w-[70px] sm:w-[90px] mx-auto bg-gray-200 rounded mb-2" />
-                  <div className="h-3 w-3/4 mx-auto bg-gray-200 rounded" />
+                  <div className="mx-auto mb-2 h-[90px] w-[90px] rounded bg-muted" />
+                  <div className="mx-auto h-3 w-3/4 rounded bg-muted" />
                 </Card>
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7 gap-3 sm:gap-4 primary">
-              {categories.map((category) => (
+            <div className="grid grid-cols-3 gap-4 md:grid-cols-4 lg:grid-cols-6 primary">
+              {parentCategories.map((parent) => (
                 <Card
-                  key={category.id}
-                  className={`p-2 sm:p-3 text-center card-hover category-hover transition-all cursor-pointer min-h-[120px] sm:min-h-[140px] flex flex-col justify-between border border-gray-200 ${
-                    selectedCategory === category.name
-                      ? "ring-2 ring-blue-500 bg-theme-primary"
-                      : "hover:bg-gray-50"
+                  key={parent.id}
+                  className={`text-center category-hover flex min-h-[140px] cursor-pointer flex-col justify-between p-4 ${
+                    highlightedParentId === parent.id
+                      ? "ring-2 ring-theme-accent bg-muted/40"
+                      : ""
                   }`}
-                  onClick={() => handleCategoryClick(category.name)}
+                  onClick={() => handleParentCardClick(parent.id)}
                 >
                   <div className="mb-2 flex-shrink-0">
                     <Image
-                      src={
-                        category.image && category.image.length > 0
-                          ? category.image
-                          : "/images/products/"
-                      }
-                      alt={category.name}
+                      src={pickCardImage(parent)}
+                      alt={parent.name}
                       width={90}
                       height={90}
-                      className="mx-auto object-contain w-[60px] h-[60px] sm:w-[90px] sm:h-[90px]"
+                      className="mx-auto h-[90px] w-[90px] object-contain"
                     />
                   </div>
                   <h3
                     className={`text-xs font-medium leading-tight ${
-                      selectedCategory === category.name
-                        ? "text-theme-primary"
-                        : "text-gray-700"
+                      highlightedParentId === parent.id
+                        ? "text-theme-accent"
+                        : "text-foreground"
                     }`}
                   >
-                    {category.name}
+                    {parent.name}
                   </h3>
                 </Card>
               ))}
@@ -308,15 +352,16 @@ export function HomepageContent() {
           <h2 className="text-lg sm:text-xl font-semibold text-theme-primary break-words">
             {getDisplayTitle()}
           </h2>
-          {(selectedCategory || searchQuery) && (
+          {(selectedCategory || selectedParentId || searchQuery) && (
             <Button
               variant="outline"
               onClick={() => {
                 setSelectedCategory(null);
+                setSelectedParentId(null);
                 setSearchQuery(null);
                 router.push("/");
               }}
-              className="text-theme-secondary border-blue-500 hover:bg-theme-primary bg-transparent text-xs sm:text-sm w-full sm:w-auto"
+              className="text-theme-secondary border-theme-accent hover:bg-theme-smokeSoft/20 bg-transparent text-xs sm:text-sm w-full sm:w-auto"
             >
               Ver todos
             </Button>
@@ -324,10 +369,8 @@ export function HomepageContent() {
         </div>
 
         <style jsx global>{`
-          /* Make only category images primary color */
           .category-hover img {
-            filter: invert(24%) sepia(82%) saturate(356%) hue-rotate(178deg)
-              brightness(95%) contrast(90%);
+            filter: brightness(1.08) contrast(1.05);
           }
         `}</style>
 
@@ -345,33 +388,30 @@ export function HomepageContent() {
         )}
 
         {loadingProducts ? (
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 lg:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4 lg:gap-6 [&>*]:min-w-0">
             {Array.from({ length: 10 }).map((_, i) => (
-              <Card
-                key={i}
-                className="p-2 sm:p-4 border border-gray-200 animate-pulse"
-              >
-                <div className="w-full aspect-square bg-gray-200 mb-2 sm:mb-4 rounded" />
-                <div className="h-3 sm:h-4 w-3/4 bg-gray-200 mb-2 sm:mb-3" />
+              <Card key={i} className="card-static min-w-0 animate-pulse overflow-hidden p-2 sm:p-4">
+                <div className="w-full aspect-square bg-muted mb-2 sm:mb-4 rounded" />
+                <div className="h-3 sm:h-4 w-3/4 bg-muted mb-2 sm:mb-3" />
                 <div className="space-y-1 sm:space-y-2 mb-2 sm:mb-4">
-                  <div className="h-2 sm:h-3 w-1/3 bg-gray-200" />
-                  <div className="h-4 sm:h-5 w-1/2 bg-gray-200" />
+                  <div className="h-2 sm:h-3 w-1/3 bg-muted" />
+                  <div className="h-4 sm:h-5 w-1/2 bg-muted" />
                 </div>
-                <div className="flex space-x-1 sm:space-x-2">
-                  <div className="h-7 sm:h-9 flex-1 bg-gray-200" />
-                  <div className="h-7 sm:h-9 w-8 sm:w-10 bg-gray-200" />
+                <div className="flex min-w-0 gap-1 sm:gap-2">
+                  <div className="h-8 min-w-0 flex-1 bg-muted sm:h-9" />
+                  <div className="h-8 w-9 shrink-0 bg-muted sm:h-9 sm:w-10" />
                 </div>
               </Card>
             ))}
           </div>
         ) : filteredProducts.length > 0 ? (
-          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 lg:gap-6">
+          <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4 lg:gap-6 [&>*]:min-w-0">
             {filteredProducts.map((product) => (
               <Card
                 key={product.id}
-                className="p-2 sm:p-4 card-hover transition-shadow border border-gray-200 flex flex-col"
+                className="flex min-w-0 flex-col overflow-hidden p-2 sm:p-4"
               >
-                <div className="relative mb-2 sm:mb-4 flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden">
+                <div className="relative mb-2 aspect-square flex-shrink-0 overflow-hidden rounded-md bg-muted sm:mb-4">
                   <Image
                     src={product.image || "/images/products/"}
                     alt={product.name}
@@ -386,18 +426,20 @@ export function HomepageContent() {
                 </h3>
 
                 <div className="space-y-1 sm:space-y-2 mb-2 sm:mb-4 flex-shrink-0">
-                  <div className="text-xs sm:text-sm text-gray-600">A partir de</div>
-                  <div className="text-base sm:text-xl font-bold text-theme-primary">
+                  <div className="text-xs sm:text-sm text-muted-foreground">
+                    A partir de
+                  </div>
+                  <div className="price text-lg sm:text-xl">
                     {product.price
                       ? `R$ ${formatPriceBRL(product.price)}`
                       : "Preço indisponível"}
                   </div>
                 </div>
 
-                <div className="flex space-x-1 sm:space-x-2 mt-auto">
+                <div className="mt-auto flex min-w-0 w-full gap-1 sm:gap-2">
                   <Button
                     onClick={() => handleProductClick(product)}
-                    className="flex-1 btn-theme-primary button-hover text-xs sm:text-sm py-1 sm:py-2"
+                    className="h-9 min-w-0 flex-1 truncate px-1.5 text-[10px] btn-theme-primary button-hover sm:h-10 sm:px-3 sm:text-sm"
                   >
                     DETALHES
                   </Button>
@@ -411,7 +453,7 @@ export function HomepageContent() {
                         pharmacyProductId: product.pharmacyProductId || null,
                       })
                     }
-                    className="btn-theme-secondary button-hover text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2"
+                    className="h-9 w-9 shrink-0 p-0 btn-theme-secondary button-hover text-sm sm:h-10 sm:w-10 sm:text-base sm:py-2"
                     title="Adicionar ao carrinho"
                   >
                     +
@@ -422,13 +464,13 @@ export function HomepageContent() {
           </div>
         ) : (
           <div className="text-center py-8 sm:py-12 px-4">
-            <Search className="w-12 h-12 sm:w-16 sm:h-16 text-gray-300 mx-auto mb-4" />
+            <Search className="w-12 h-12 sm:w-16 sm:h-16 text-muted-foreground/40 mx-auto mb-4" />
             <h3 className="text-base sm:text-lg font-semibold text-theme-primary mb-2">
               {searchQuery
                 ? `Nenhum produto encontrado para "${searchQuery}"`
                 : "Nenhum produto encontrado"}
             </h3>
-            <p className="text-sm sm:text-base text-gray-500 mb-4 sm:mb-6">
+            <p className="text-sm sm:text-base text-muted-foreground mb-4 sm:mb-6">
               {searchQuery
                 ? "Tente buscar por outros termos ou navegue pelas categorias"
                 : "Tente ajustar os filtros ou navegue pelas categorias"}
