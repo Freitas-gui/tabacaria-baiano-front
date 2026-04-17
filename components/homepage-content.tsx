@@ -18,6 +18,12 @@ import {
   productMatchesLeaf,
 } from "@/lib/categories";
 
+type ProductVariation = {
+  typeName: string;
+  optionId: string;
+  optionName: string;
+};
+
 // >>> Product normalizado para o front
 type Product = {
   id: string;
@@ -30,6 +36,7 @@ type Product = {
   image: string | null; // principal (1ª imagem)
   additionalImages: string[]; // demais imagens
   keywords: string[];
+  variations: ProductVariation[];
 };
 
 function formatPriceBRL(value: string | number | null | undefined) {
@@ -119,6 +126,13 @@ export function HomepageContent() {
             image: imgs.length > 0 ? imgs[0] : null,
             additionalImages: imgs.slice(1),
             keywords: Array.isArray(p?.keywords) ? p.keywords : [],
+            variations: Array.isArray(p?.variations)
+              ? p.variations.map((v: any) => ({
+                  typeName: String(v.typeName ?? ""),
+                  optionId: String(v.optionId ?? ""),
+                  optionName: String(v.optionName ?? ""),
+                }))
+              : [],
           } as Product;
         })
         .filter((p: Product) => p.id && p.name);
@@ -420,6 +434,12 @@ export function HomepageContent() {
                       ? `R$ ${formatPriceBRL(product.price)}`
                       : "Preço indisponível"}
                   </div>
+                  {product.variations.length > 0 && (
+                    <span className="inline-block px-2 py-0.5 text-[10px] sm:text-xs rounded-full border border-border bg-muted text-theme-primary">
+                      {product.variations[0].typeName}:{" "}
+                      {product.variations[0].optionName}
+                    </span>
+                  )}
                 </div>
 
                 <div className="mt-auto flex min-w-0 w-full gap-1 sm:gap-2">
@@ -430,15 +450,19 @@ export function HomepageContent() {
                     DETALHES
                   </Button>
                   <Button
-                    onClick={() =>
+                    onClick={() => {
+                      const firstVariation = product.variations[0] ?? null;
                       addToCart({
                         id: `${product.id}-${Date.now()}`,
                         name: product.name,
                         price: product.price ?? "0",
                         image: product.image ?? "/images/products/",
                         pharmacyProductId: product.pharmacyProductId || null,
-                      })
-                    }
+                        variationOptionId: firstVariation?.optionId ?? null,
+                        variationOptionName: firstVariation?.optionName ?? null,
+                        variationTypeName: firstVariation?.typeName ?? null,
+                      });
+                    }}
                     className="h-9 w-9 shrink-0 p-0 btn-theme-secondary button-hover text-sm sm:h-10 sm:w-10 sm:text-base sm:py-2"
                     title="Adicionar ao carrinho"
                   >

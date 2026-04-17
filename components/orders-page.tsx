@@ -18,6 +18,11 @@ import { useState, useEffect, useCallback } from "react";
 import { useUser } from "@/contexts/user-context";
 import { API_BASE_URL } from "@/lib/api";
 
+interface VariationOption {
+  typeName: string;
+  optionName: string;
+}
+
 interface OrderItem {
   id: string;
   name: string;
@@ -25,6 +30,7 @@ interface OrderItem {
   quantity: number;
   image: string;
   pharmacyName?: string | null;
+  variationOption?: VariationOption | null;
 }
 
 interface Order {
@@ -121,6 +127,12 @@ export function OrdersPage() {
                 "/placeholder.svg?height=80&width=80",
               pharmacyName:
                 product.pharmacy?.name || order.pharmacy?.name || null,
+              variationOption: product.variationOption
+                ? {
+                    typeName: product.variationOption.typeName,
+                    optionName: product.variationOption.optionName,
+                  }
+                : null,
             })) || [];
 
           const address = order.address;
@@ -195,6 +207,12 @@ export function OrdersPage() {
               "/placeholder.svg?height=80&width=80",
             pharmacyName:
               product.pharmacy?.name || order.pharmacy?.name || null,
+            variationOption: product.variationOption
+              ? {
+                  typeName: product.variationOption.typeName,
+                  optionName: product.variationOption.optionName,
+                }
+              : null,
           })) || [];
 
         const address = order.address;
@@ -349,6 +367,12 @@ export function OrdersPage() {
                               {item.pharmacyName && (
                                 <span className="text-xs sm:text-sm text-theme-secondary mt-1">
                                   Loja: {item.pharmacyName}
+                                </span>
+                              )}
+                              {item.variationOption && (
+                                <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary w-fit">
+                                  {item.variationOption.typeName}:{" "}
+                                  {item.variationOption.optionName}
                                 </span>
                               )}
                             </div>
@@ -548,6 +572,11 @@ export function OrdersPage() {
                           {item.name}
                         </div>
                         <div>Qtd: {item.quantity}</div>
+                        {item.variationOption && (
+                          <div className="mt-0.5 text-theme-primary/70 truncate max-w-[100px] sm:max-w-[120px]">
+                            {item.variationOption.optionName}
+                          </div>
+                        )}
                       </div>
                     </div>
                   ))}

@@ -4,7 +4,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import Image from "next/image";
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 import { extractProductImageUrls } from "@/lib/product-images";
 
@@ -15,6 +16,12 @@ type Pharmacy = {
   price: string;
   stock: number;
   pharmacyProductId: string;
+};
+
+type Variation = {
+  typeName: string;
+  optionId: string;
+  optionName: string;
 };
 
 type Product = {
@@ -58,6 +65,10 @@ export function ProductDetail() {
     stock: number;
   } | null>(null);
   const [loadingProductDetail, setLoadingProductDetail] = useState(false);
+  const [variations, setVariations] = useState<Variation[]>([]);
+  const [selectedVariationOptionId, setSelectedVariationOptionId] = useState<
+    string | null
+  >(null);
 
   // ---- Products from API ----
   const [products, setProducts] = useState<Product[]>([]);
@@ -177,6 +188,19 @@ export function ProductDetail() {
             image: data.images[0],
             additionalImages: data.images.slice(1),
           }));
+        }
+
+        if (Array.isArray(data.variations) && data.variations.length > 0) {
+          const parsed: Variation[] = data.variations.map((v: any) => ({
+            typeName: String(v.typeName ?? ""),
+            optionId: String(v.optionId ?? ""),
+            optionName: String(v.optionName ?? ""),
+          }));
+          setVariations(parsed);
+          setSelectedVariationOptionId(parsed[0].optionId);
+        } else {
+          setVariations([]);
+          setSelectedVariationOptionId(null);
         }
       }
     } catch (error) {
@@ -313,6 +337,10 @@ export function ProductDetail() {
     }
   }, [product.pharmacyProductId]);
 
+  const selectedVariation = variations.find(
+    (v) => v.optionId === selectedVariationOptionId,
+  );
+
   const handleAddToCart = () => {
     if (
       currentPharmacy &&
@@ -326,7 +354,10 @@ export function ProductDetail() {
     const availableStock = currentPharmacy?.stock ?? null;
     if (availableStock !== null && availableStock !== undefined) {
       const existingItem = items.find(
-        (item) => item.pharmacyProductId === product.pharmacyProductId,
+        (item) =>
+          item.pharmacyProductId === product.pharmacyProductId &&
+          (item.variationOptionId === selectedVariationOptionId ||
+            item.variationOptionName === selectedVariation?.optionName),
       );
 
       if (existingItem) {
@@ -346,6 +377,9 @@ export function ProductDetail() {
       pharmacyProductId: product.pharmacyProductId || null,
       pharmacyName: currentPharmacy?.name || null,
       stock: currentPharmacy?.stock ?? null,
+      variationOptionId: selectedVariationOptionId,
+      variationOptionName: selectedVariation?.optionName ?? null,
+      variationTypeName: selectedVariation?.typeName ?? null,
     });
   };
 
@@ -362,7 +396,10 @@ export function ProductDetail() {
     const availableStock = currentPharmacy?.stock ?? null;
     if (availableStock !== null && availableStock !== undefined) {
       const existingItem = items.find(
-        (item) => item.pharmacyProductId === product.pharmacyProductId,
+        (item) =>
+          item.pharmacyProductId === product.pharmacyProductId &&
+          (item.variationOptionId === selectedVariationOptionId ||
+            item.variationOptionName === selectedVariation?.optionName),
       );
 
       if (existingItem) {
@@ -382,8 +419,70 @@ export function ProductDetail() {
       pharmacyProductId: product.pharmacyProductId || null,
       pharmacyName: currentPharmacy?.name || null,
       stock: currentPharmacy?.stock ?? null,
+      variationOptionId: selectedVariationOptionId,
+      variationOptionName: selectedVariation?.optionName ?? null,
+      variationTypeName: selectedVariation?.typeName ?? null,
     });
     router.push("/checkout");
+  };
+
+  const dragStartX = useRef<number | null>(null);
+  const isDragging = useRef(false);
+
+  const goToPrevImage = useCallback(() => {
+    setSelectedImageIndex((prev) =>
+      prev === 0 ? productImages.length - 1 : prev - 1,
+    );
+  }, [productImages.length]);
+
+  const goToNextImage = useCallback(() => {
+    setSelectedImageIndex((prev) =>
+      prev === productImages.length - 1 ? 0 : prev + 1,
+    );
+  }, [productImages.length]);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    dragStartX.current = e.touches[0].clientX;
+    isDragging.current = false;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (dragStartX.current === null) return;
+    const diff = e.touches[0].clientX - dragStartX.current;
+    if (Math.abs(diff) > 5) isDragging.current = true;
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (dragStartX.current === null || productImages.length <= 1) return;
+    const diff = e.changedTouches[0].clientX - dragStartX.current;
+    if (Math.abs(diff) > 40) {
+      if (diff < 0) goToNextImage();
+      else goToPrevImage();
+    }
+    dragStartX.current = null;
+    isDragging.current = false;
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    dragStartX.current = e.clientX;
+    isDragging.current = false;
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (dragStartX.current === null) return;
+    const diff = e.clientX - dragStartX.current;
+    if (Math.abs(diff) > 5) isDragging.current = true;
+  };
+
+  const handleMouseUp = (e: React.MouseEvent) => {
+    if (dragStartX.current === null || productImages.length <= 1) return;
+    const diff = e.clientX - dragStartX.current;
+    if (Math.abs(diff) > 40) {
+      if (diff < 0) goToNextImage();
+      else goToPrevImage();
+    }
+    dragStartX.current = null;
+    isDragging.current = false;
   };
 
   const handleRelatedProductClick = (relatedProduct: Product) => {
@@ -465,18 +564,58 @@ export function ProductDetail() {
             productImages.length > 1 ? "lg:col-span-5" : "lg:col-span-7"
           }
         >
-          <div className="relative aspect-square bg-muted rounded overflow-hidden max-w-sm mx-auto lg:max-w-none">
+          <div
+            className="relative aspect-square bg-muted rounded overflow-hidden max-w-sm mx-auto lg:max-w-none select-none"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              dragStartX.current = null;
+              isDragging.current = false;
+            }}
+          >
             <Image
               src={productImages[selectedImageIndex] || "/placeholder.svg"}
               alt={product.name}
               width={400}
               height={400}
-              className="w-full h-full object-contain p-2 sm:p-4"
+              className="w-full h-full object-contain p-2 sm:p-4 pointer-events-none"
+              draggable={false}
             />
             {productImages.length > 1 && (
-              <div className="absolute bottom-2 sm:bottom-4 right-2 sm:right-4 bg-black bg-opacity-70 text-white text-xs sm:text-sm px-2 sm:px-3 py-1 rounded">
-                {selectedImageIndex + 1} / {productImages.length}
-              </div>
+              <>
+                <button
+                  onClick={goToPrevImage}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/25 backdrop-blur-sm border border-white/30 text-gray-700 hover:bg-white/60 hover:scale-110 hover:shadow-md active:scale-95 transition-all duration-200"
+                  aria-label="Imagem anterior"
+                >
+                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.75]" />
+                </button>
+                <button
+                  onClick={goToNextImage}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/25 backdrop-blur-sm border border-white/30 text-gray-700 hover:bg-white/60 hover:scale-110 hover:shadow-md active:scale-95 transition-all duration-200"
+                  aria-label="Próxima imagem"
+                >
+                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.75]" />
+                </button>
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
+                  {productImages.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedImageIndex(i)}
+                      aria-label={`Ir para imagem ${i + 1}`}
+                      className={`rounded-full transition-all duration-200 ${
+                        i === selectedImageIndex
+                          ? "w-4 h-2 bg-gray-700"
+                          : "w-2 h-2 bg-gray-400/70 hover:bg-gray-500"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </div>
@@ -507,6 +646,29 @@ export function ProductDetail() {
                 </div>
               )}
             </div>
+
+            {variations.length > 1 && (
+              <div className="p-3 sm:p-4 border border-border rounded-[14px] bg-card">
+                <h3 className="text-xs sm:text-sm font-semibold text-theme-primary mb-2 sm:mb-3">
+                  {variations[0].typeName}
+                </h3>
+                <div className="flex flex-wrap gap-2">
+                  {variations.map((v) => (
+                    <button
+                      key={v.optionId}
+                      onClick={() => setSelectedVariationOptionId(v.optionId)}
+                      className={`px-3 py-1.5 text-xs sm:text-sm rounded-full border transition-all duration-150 ${
+                        selectedVariationOptionId === v.optionId
+                          ? "border-theme-accent bg-theme-accent text-white font-semibold"
+                          : "border-border hover:border-theme-accent text-theme-primary"
+                      }`}
+                    >
+                      {v.optionName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {otherPharmacies.length > 0 && (
               <div className="mt-3 sm:mt-4 p-3 sm:p-4 border border-border rounded-[14px] bg-card">

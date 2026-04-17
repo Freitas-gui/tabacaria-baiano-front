@@ -7,7 +7,13 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: {
-    domains: ['placeholder.svg'],
+    remotePatterns: [
+      {
+        protocol: 'https',
+        hostname: '**.amazonaws.com',
+        pathname: '/**',
+      },
+    ],
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',
     contentSecurityPolicy: "default-src 'self'; script-src 'none'; sandbox;",

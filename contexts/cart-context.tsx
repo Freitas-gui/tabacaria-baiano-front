@@ -11,6 +11,9 @@ interface CartItem {
   pharmacyProductId?: string | null
   pharmacyName?: string | null
   stock?: number | null
+  variationOptionId?: string | null
+  variationOptionName?: string | null
+  variationTypeName?: string | null
 }
 
 interface CartContextType {
@@ -53,6 +56,20 @@ export function CartProvider({ children }: { children: ReactNode }) {
     }
   }, [items, isInitialized])
 
+  const isSameVariation = (
+    itemOptionId: string | null | undefined,
+    itemOptionName: string | null | undefined,
+    newOptionId: string | null | undefined,
+    newOptionName: string | null | undefined,
+  ): boolean => {
+    if (itemOptionId && newOptionId) return itemOptionId === newOptionId
+    if (itemOptionName && newOptionName) return itemOptionName === newOptionName
+    const itemHas = !!(itemOptionId || itemOptionName)
+    const newHas = !!(newOptionId || newOptionName)
+    if (!itemHas && !newHas) return true
+    return false
+  }
+
   const addToCart = (newItem: Omit<CartItem, "quantity">) => {
     setItems((currentItems) => {
       const itemWithValidImage = {
@@ -64,11 +81,17 @@ export function CartProvider({ children }: { children: ReactNode }) {
       const baseProductId = newItem.id.split("-").slice(0, -1).join("-")
 
       const existingItemIndex = currentItems.findIndex((item) => {
+        const sameVariation = isSameVariation(
+          item.variationOptionId,
+          item.variationOptionName,
+          newItem.variationOptionId,
+          newItem.variationOptionName,
+        )
         if (newItem.pharmacyProductId && item.pharmacyProductId) {
-          return item.pharmacyProductId === newItem.pharmacyProductId
+          return item.pharmacyProductId === newItem.pharmacyProductId && sameVariation
         }
         const itemBaseProductId = item.id.split("-").slice(0, -1).join("-")
-        return itemBaseProductId === baseProductId
+        return itemBaseProductId === baseProductId && sameVariation
       })
 
       if (existingItemIndex >= 0) {
@@ -88,6 +111,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
           ...existingItem,
           quantity: newQuantity,
           stock: newItem.stock !== undefined && newItem.stock !== null ? newItem.stock : existingItem.stock,
+          variationOptionId: newItem.variationOptionId ?? existingItem.variationOptionId,
+          variationOptionName: newItem.variationOptionName ?? existingItem.variationOptionName,
+          variationTypeName: newItem.variationTypeName ?? existingItem.variationTypeName,
         }
         return updatedItems
       }

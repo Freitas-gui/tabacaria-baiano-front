@@ -196,20 +196,38 @@ export function CheckoutForm() {
     setIsSubmitting(true);
 
     try {
-      console.log("Cart items:", items);
+      const resolvedItems = await Promise.all(
+        items.map(async (item) => {
+          if (item.variationOptionName && !item.variationOptionId && item.pharmacyProductId) {
+            try {
+              const res = await fetch(
+                `${API_BASE_URL}/api/product/show/${item.pharmacyProductId}`,
+              );
+              if (res.ok && res.status !== 204) {
+                const json = await res.json();
+                const data = json.data || json;
+                const matched = Array.isArray(data.variations)
+                  ? data.variations.find(
+                      (v: any) => v.optionName === item.variationOptionName,
+                    )
+                  : null;
+                if (matched?.optionId) {
+                  return { ...item, variationOptionId: matched.optionId };
+                }
+              }
+            } catch {}
+          }
+          return item;
+        }),
+      );
 
-      const products = items.map((item) => {
-        console.log(
-          "Cart item ID:",
-          item.id,
-          "Pharmacy Product ID:",
-          item.pharmacyProductId,
-        );
-        return {
-          pharmacy_product_id: item.pharmacyProductId,
-          amount: item.quantity,
-        };
-      });
+      const products = resolvedItems.map((item) => ({
+        pharmacy_product_id: item.pharmacyProductId,
+        amount: item.quantity,
+        ...(item.variationOptionId
+          ? { variation_option_id: item.variationOptionId }
+          : {}),
+      }));
 
       console.log("Products array:", products);
 
@@ -393,6 +411,14 @@ export function CheckoutForm() {
                               Carregando loja...
                             </p>
                           )}
+                        {item.variationOptionName && (
+                          <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
+                            {item.variationTypeName
+                              ? `${item.variationTypeName}: `
+                              : ""}
+                            {item.variationOptionName}
+                          </span>
+                        )}
                         <p className="text-xs sm:text-sm font-semibold text-theme-secondary mt-1">
                           Subtotal: R${" "}
                           {(
