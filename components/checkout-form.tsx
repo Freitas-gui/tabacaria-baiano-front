@@ -2,7 +2,7 @@
 
 import type React from "react";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useCart, type CartItem } from "@/contexts/cart-context";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
@@ -32,6 +32,7 @@ export function CheckoutForm() {
   const [loadingStocks, setLoadingStocks] = useState<Record<string, boolean>>(
     {},
   );
+  const requestedItems = useRef<Set<string>>(new Set());
 
   const [formData, setFormData] = useState({
     email: "",
@@ -77,15 +78,17 @@ export function CheckoutForm() {
   }, [user]);
 
   const fetchProductInfo = useCallback(
-    async (pharmacyProductId: string, itemId: string) => {
-      setLoadingPharmacyNames((prev) => {
-        if (prev[itemId]) return prev;
-        return { ...prev, [itemId]: true };
-      });
-      setLoadingStocks((prev) => {
-        if (prev[itemId]) return prev;
-        return { ...prev, [itemId]: true };
-      });
+    async (
+      pharmacyProductId: string,
+      itemId: string,
+      variationOptionId?: string | null,
+      variationOptionName?: string | null,
+    ) => {
+      if (requestedItems.current.has(itemId)) return;
+      requestedItems.current.add(itemId);
+
+      setLoadingPharmacyNames((prev) => ({ ...prev, [itemId]: true }));
+      setLoadingStocks((prev) => ({ ...prev, [itemId]: true }));
 
       try {
         const res = await fetch(
@@ -103,10 +106,32 @@ export function CheckoutForm() {
             });
           }
 
-          if (data?.stock !== undefined && data?.stock !== null) {
+          let resolvedStock: number | null = null;
+
+          if (Array.isArray(data?.variations) && data.variations.length > 0) {
+            const matchedVariation = data.variations.find((v: any) => {
+              if (variationOptionId && v.optionId) {
+                return String(v.optionId) === String(variationOptionId);
+              }
+              if (variationOptionName && v.optionName) {
+                return String(v.optionName) === String(variationOptionName);
+              }
+              return false;
+            });
+
+            if (matchedVariation?.stock !== undefined && matchedVariation?.stock !== null) {
+              resolvedStock = Number(matchedVariation.stock);
+            }
+          }
+
+          if (resolvedStock === null && data?.stock !== undefined && data?.stock !== null) {
+            resolvedStock = data.stock;
+          }
+
+          if (resolvedStock !== null) {
             setProductStocks((prev) => {
               if (prev[itemId] !== undefined) return prev;
-              return { ...prev, [itemId]: data.stock };
+              return { ...prev, [itemId]: resolvedStock as number };
             });
           }
         }
@@ -122,32 +147,22 @@ export function CheckoutForm() {
 
   useEffect(() => {
     items.forEach((item) => {
-      if (
-        item.pharmacyProductId &&
-        !loadingPharmacyNames[item.id] &&
-        !loadingStocks[item.id]
-      ) {
-        const needsPharmacyName = !item.pharmacyName && !pharmacyNames[item.id];
-        const needsStock = productStocks[item.id] === undefined;
+      if (!item.pharmacyProductId || requestedItems.current.has(item.id)) return;
 
-        if (needsPharmacyName || needsStock) {
-          fetchProductInfo(item.pharmacyProductId, item.id);
-        } else if (item.pharmacyName && !pharmacyNames[item.id]) {
-          setPharmacyNames((prev) => ({
-            ...prev,
-            [item.id]: item.pharmacyName!,
-          }));
-        }
+      const needsPharmacyName = !item.pharmacyName && !pharmacyNames[item.id];
+      const needsStock = productStocks[item.id] === undefined;
+
+      if (needsPharmacyName || needsStock) {
+        fetchProductInfo(item.pharmacyProductId, item.id, item.variationOptionId, item.variationOptionName);
+      } else if (item.pharmacyName && !pharmacyNames[item.id]) {
+        requestedItems.current.add(item.id);
+        setPharmacyNames((prev) => ({
+          ...prev,
+          [item.id]: item.pharmacyName!,
+        }));
       }
     });
-  }, [
-    items,
-    fetchProductInfo,
-    pharmacyNames,
-    loadingPharmacyNames,
-    productStocks,
-    loadingStocks,
-  ]);
+  }, [items, fetchProductInfo, pharmacyNames, productStocks]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,

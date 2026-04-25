@@ -22,6 +22,7 @@ type Variation = {
   typeName: string;
   optionId: string;
   optionName: string;
+  stock?: number | null;
 };
 
 type Product = {
@@ -62,7 +63,7 @@ export function ProductDetail() {
   const [loadingOtherPharmacies, setLoadingOtherPharmacies] = useState(false);
   const [currentPharmacy, setCurrentPharmacy] = useState<{
     name: string;
-    stock: number;
+    stock: number | null;
   } | null>(null);
   const [loadingProductDetail, setLoadingProductDetail] = useState(false);
   const [variations, setVariations] = useState<Variation[]>([]);
@@ -158,7 +159,7 @@ export function ProductDetail() {
         if (data.pharmacy) {
           setCurrentPharmacy({
             name: data.pharmacy.name,
-            stock: data.stock || 0,
+            stock: data.stock ?? null,
           });
         }
 
@@ -195,6 +196,7 @@ export function ProductDetail() {
             typeName: String(v.typeName ?? ""),
             optionId: String(v.optionId ?? ""),
             optionName: String(v.optionName ?? ""),
+            stock: v.stock !== undefined && v.stock !== null ? Number(v.stock) : null,
           }));
           setVariations(parsed);
           setSelectedVariationOptionId(parsed[0].optionId);
@@ -342,16 +344,16 @@ export function ProductDetail() {
   );
 
   const handleAddToCart = () => {
-    if (
-      currentPharmacy &&
-      currentPharmacy.stock !== undefined &&
-      currentPharmacy.stock <= 0
-    ) {
+    const availableStock =
+      selectedVariation?.stock !== undefined && selectedVariation?.stock !== null
+        ? selectedVariation.stock
+        : (currentPharmacy?.stock ?? null);
+
+    if (availableStock !== null && availableStock !== undefined && availableStock <= 0) {
       router.push("/checkout");
       return;
     }
 
-    const availableStock = currentPharmacy?.stock ?? null;
     if (availableStock !== null && availableStock !== undefined) {
       const existingItem = items.find(
         (item) =>
@@ -360,12 +362,9 @@ export function ProductDetail() {
             item.variationOptionName === selectedVariation?.optionName),
       );
 
-      if (existingItem) {
-        const currentQuantity = existingItem.quantity;
-        if (currentQuantity >= availableStock) {
-          router.push("/checkout");
-          return;
-        }
+      if (existingItem && existingItem.quantity >= availableStock) {
+        router.push("/checkout");
+        return;
       }
     }
 
@@ -376,7 +375,7 @@ export function ProductDetail() {
       image: product.image || "/placeholder.svg?height=400&width=400",
       pharmacyProductId: product.pharmacyProductId || null,
       pharmacyName: currentPharmacy?.name || null,
-      stock: currentPharmacy?.stock ?? null,
+      stock: availableStock,
       variationOptionId: selectedVariationOptionId,
       variationOptionName: selectedVariation?.optionName ?? null,
       variationTypeName: selectedVariation?.typeName ?? null,
@@ -384,16 +383,16 @@ export function ProductDetail() {
   };
 
   const handleBuyNow = () => {
-    if (
-      currentPharmacy &&
-      currentPharmacy.stock !== undefined &&
-      currentPharmacy.stock <= 0
-    ) {
+    const availableStock =
+      selectedVariation?.stock !== undefined && selectedVariation?.stock !== null
+        ? selectedVariation.stock
+        : (currentPharmacy?.stock ?? null);
+
+    if (availableStock !== null && availableStock !== undefined && availableStock <= 0) {
       router.push("/checkout");
       return;
     }
 
-    const availableStock = currentPharmacy?.stock ?? null;
     if (availableStock !== null && availableStock !== undefined) {
       const existingItem = items.find(
         (item) =>
@@ -402,12 +401,9 @@ export function ProductDetail() {
             item.variationOptionName === selectedVariation?.optionName),
       );
 
-      if (existingItem) {
-        const currentQuantity = existingItem.quantity;
-        if (currentQuantity >= availableStock) {
-          router.push("/checkout");
-          return;
-        }
+      if (existingItem && existingItem.quantity >= availableStock) {
+        router.push("/checkout");
+        return;
       }
     }
 
@@ -418,7 +414,7 @@ export function ProductDetail() {
       image: product.image || "/placeholder.svg?height=400&width=400",
       pharmacyProductId: product.pharmacyProductId || null,
       pharmacyName: currentPharmacy?.name || null,
-      stock: currentPharmacy?.stock ?? null,
+      stock: availableStock,
       variationOptionId: selectedVariationOptionId,
       variationOptionName: selectedVariation?.optionName ?? null,
       variationTypeName: selectedVariation?.typeName ?? null,
