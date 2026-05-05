@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
 import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCart } from "@/contexts/cart-context";
 import { API_BASE_URL } from "@/lib/api";
 import { extractProductImageUrls } from "@/lib/product-images";
@@ -51,7 +51,8 @@ function formatPriceBRL(value: string | number | null | undefined) {
 export function HomepageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { addToCart } = useCart();
+  const { addToCart, items } = useCart();
+  const stockCache = useRef<Record<string, number | null>>({});
 
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(
@@ -167,6 +168,33 @@ export function HomepageContent() {
       setLoadingProducts(false);
     }
   }, []);
+
+  const fetchStockForProduct = useCallback(
+    async (pharmacyProductId: string): Promise<number | null> => {
+      if (pharmacyProductId in stockCache.current) {
+        return stockCache.current[pharmacyProductId];
+      }
+      try {
+        const res = await fetch(
+          `${API_BASE_URL}/api/product/show/${pharmacyProductId}`,
+        );
+        if (res.ok && res.status !== 204) {
+          const json = await res.json();
+          const data = json.data || json;
+          const stock =
+            data?.stock !== undefined && data?.stock !== null
+              ? Number(data.stock)
+              : null;
+          stockCache.current[pharmacyProductId] = stock;
+          return stock;
+        }
+      } catch {
+      }
+      stockCache.current[pharmacyProductId] = null;
+      return null;
+    },
+    [],
+  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -476,22 +504,44 @@ export function HomepageContent() {
                     DETALHES
                   </Button>
                   <Button
-                    onClick={() => {
+                    onClick={async () => {
                       const availableVariation =
                         product.variations.find(
                           (v) => v.stock === null || v.stock === undefined || v.stock > 0,
                         ) ?? product.variations[0] ?? null;
-                      const variantStock =
+
+                      let resolvedStock: number | null =
                         availableVariation?.stock !== undefined && availableVariation?.stock !== null
                           ? availableVariation.stock
                           : (product.stock ?? null);
+
+                      if (resolvedStock === null && product.pharmacyProductId) {
+                        resolvedStock = await fetchStockForProduct(product.pharmacyProductId);
+                      }
+
+                      if (resolvedStock !== null && resolvedStock <= 0) {
+                        return;
+                      }
+
+                      if (resolvedStock !== null) {
+                        const existing = items.find(
+                          (item) =>
+                            item.pharmacyProductId === product.pharmacyProductId &&
+                            !item.variationOptionId &&
+                            !item.variationOptionName,
+                        );
+                        if (existing && existing.quantity >= resolvedStock) {
+                          return;
+                        }
+                      }
+
                       addToCart({
                         id: `${product.id}-${Date.now()}`,
                         name: product.name,
                         price: product.price ?? "0",
                         image: product.image ?? "/images/products/",
                         pharmacyProductId: product.pharmacyProductId || null,
-                        stock: variantStock,
+                        stock: resolvedStock,
                         variationOptionId: availableVariation?.optionId ?? null,
                         variationOptionName: availableVariation?.optionName ?? null,
                         variationTypeName: availableVariation?.typeName ?? null,

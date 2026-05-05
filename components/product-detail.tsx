@@ -192,14 +192,16 @@ export function ProductDetail() {
         }
 
         if (Array.isArray(data.variations) && data.variations.length > 0) {
-          const parsed: Variation[] = data.variations.map((v: any) => ({
-            typeName: String(v.typeName ?? ""),
-            optionId: String(v.optionId ?? ""),
-            optionName: String(v.optionName ?? ""),
-            stock: v.stock !== undefined && v.stock !== null ? Number(v.stock) : null,
-          }));
+          const parsed: Variation[] = data.variations
+            .filter((v: any) => v.stock !== undefined && v.stock !== null && Number(v.stock) > 0)
+            .map((v: any) => ({
+              typeName: String(v.typeName ?? ""),
+              optionId: String(v.optionId ?? ""),
+              optionName: String(v.optionName ?? ""),
+              stock: Number(v.stock),
+            }));
           setVariations(parsed);
-          setSelectedVariationOptionId(parsed[0].optionId);
+          setSelectedVariationOptionId(parsed[0]?.optionId ?? null);
         } else {
           setVariations([]);
           setSelectedVariationOptionId(null);
@@ -643,7 +645,7 @@ export function ProductDetail() {
               )}
             </div>
 
-            {variations.length > 1 && (
+            {variations.length > 0 && (
               <div className="p-3 sm:p-4 border border-border rounded-[14px] bg-card">
                 <h3 className="text-xs sm:text-sm font-semibold text-theme-primary mb-2 sm:mb-3">
                   {variations[0].typeName}
