@@ -482,18 +482,6 @@ export function HomepageContent() {
                       ? `R$ ${formatPriceBRL(product.price)}`
                       : "Preço indisponível"}
                   </div>
-                  {product.variations.length > 0 && (() => {
-                    const availableVariation =
-                      product.variations.find(
-                        (v) => v.stock === null || v.stock === undefined || v.stock > 0,
-                      ) ?? product.variations[0];
-                    return (
-                      <span className="inline-block px-2 py-0.5 text-[10px] sm:text-xs rounded-full border border-border bg-muted text-theme-primary">
-                        {availableVariation.typeName}:{" "}
-                        {availableVariation.optionName}
-                      </span>
-                    );
-                  })()}
                 </div>
 
                 <div className="mt-auto flex min-w-0 w-full gap-1 sm:gap-2">
@@ -505,18 +493,17 @@ export function HomepageContent() {
                   </Button>
                   <Button
                     onClick={async () => {
-                      const availableVariation =
-                        product.variations.find(
-                          (v) => v.stock === null || v.stock === undefined || v.stock > 0,
-                        ) ?? product.variations[0] ?? null;
+                      if (product.variations.length > 0) {
+                        handleProductClick(product);
+                        return;
+                      }
 
-                      let resolvedStock: number | null =
-                        availableVariation?.stock !== undefined && availableVariation?.stock !== null
-                          ? availableVariation.stock
-                          : (product.stock ?? null);
+                      let resolvedStock: number | null = product.stock ?? null;
 
                       if (resolvedStock === null && product.pharmacyProductId) {
-                        resolvedStock = await fetchStockForProduct(product.pharmacyProductId);
+                        resolvedStock = await fetchStockForProduct(
+                          product.pharmacyProductId,
+                        );
                       }
 
                       if (resolvedStock !== null && resolvedStock <= 0) {
@@ -542,9 +529,9 @@ export function HomepageContent() {
                         image: product.image ?? "/images/products/",
                         pharmacyProductId: product.pharmacyProductId || null,
                         stock: resolvedStock,
-                        variationOptionId: availableVariation?.optionId ?? null,
-                        variationOptionName: availableVariation?.optionName ?? null,
-                        variationTypeName: availableVariation?.typeName ?? null,
+                        variationOptionId: null,
+                        variationOptionName: null,
+                        variationTypeName: null,
                       });
                     }}
                     className="h-9 w-9 shrink-0 p-0 btn-theme-secondary button-hover text-sm sm:h-10 sm:w-10 sm:text-base sm:py-2"

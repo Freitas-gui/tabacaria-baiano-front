@@ -113,23 +113,8 @@ export function Footer() {
             <h3 className="font-semibold text-[color:var(--footer-muted)] mb-4">
               FORMAS DE PAGAMENTO
             </h3>
-            <div className="grid grid-cols-2 gap-2 mb-6">
-              <div className="w-12 h-8 rounded flex items-center justify-center bg-white/10 text-xs">
-                VISA
-              </div>
-              <div className="w-12 h-8 rounded flex items-center justify-center bg-white/10 text-xs">
-                MC
-              </div>
-              <div className="w-12 h-8 rounded flex items-center justify-center bg-white/10 text-xs">
-                ELO
-              </div>
-              <div className="w-12 h-8 rounded flex items-center justify-center bg-white/10 text-xs">
-                HIPER
-              </div>
-              <div className="w-12 h-8 rounded flex items-center justify-center bg-white/10 text-xs">
-                BANRI
-              </div>
-              <div className="w-12 h-8 rounded flex items-center justify-center bg-[color:var(--footer-muted)] text-[var(--footer-bg)] text-xs font-semibold">
+            <div className="mb-6">
+              <div className="inline-flex w-16 h-10 rounded items-center justify-center bg-[color:var(--footer-muted)] text-[var(--footer-bg)] text-sm font-semibold">
                 PIX
               </div>
             </div>

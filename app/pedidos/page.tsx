@@ -13,7 +13,15 @@ export default function PedidosPage() {
       >
         <Header />
       </Suspense>
-      <OrdersPage />
+      <Suspense
+        fallback={
+          <div className="container mx-auto px-4 py-8">
+            Carregando pedidos...
+          </div>
+        }
+      >
+        <OrdersPage />
+      </Suspense>
       <Footer />
     </div>
   );

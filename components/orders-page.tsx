@@ -15,8 +15,11 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import { API_BASE_URL } from "@/lib/api";
+import { PixPaymentPanel } from "@/components/pix-payment-panel";
+import type { PixPaymentPayload } from "@/lib/pix-payment";
 
 interface VariationOption {
   typeName: string;
@@ -48,46 +51,115 @@ interface Order {
   total: string;
   deliveryAddress: string;
   paymentMethod: string;
+  paymentStatus?: string | null;
+  paymentProvider?: string | null;
+  pixPayment?: PixPaymentPayload | null;
   estimatedDelivery?: string;
+}
+
+function mapApiOrder(order: any): Order {
+  const items: OrderItem[] =
+    order.products?.map((product: any) => ({
+      id: product.id || product.product?.id || "",
+      name: product.product?.name || "Produto",
+      price: product.price || "0",
+      quantity: product.amount || 0,
+      image:
+        product.product?.images?.[0] ||
+        "/placeholder.svg?height=80&width=80",
+      pharmacyName: product.pharmacy?.name || order.pharmacy?.name || null,
+      variationOption: product.variationOption
+        ? {
+            typeName: product.variationOption.typeName,
+            optionName: product.variationOption.optionName,
+          }
+        : null,
+    })) || [];
+
+  const address = order.address;
+  const deliveryAddress = address
+    ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
+    : "Endereço não disponível";
+
+  const paymentMap: Record<string, string> = {
+    credit_card: "Cartão de Crédito",
+    debit_card: "Cartão de Débito",
+    pix: "PIX",
+    cash: "Dinheiro",
+    credit: "Cartão de Crédito",
+    debit: "Cartão de Débito",
+    dinheiro: "Dinheiro",
+    boleto: "Boleto Bancário",
+  };
+
+  const pixPayment =
+    order.payment_status === "pending" &&
+    order.pix_copy_paste &&
+    order.pix_qrcode_base64
+      ? {
+          brCode: order.pix_copy_paste,
+          brCodeBase64: order.pix_qrcode_base64,
+          expiresAt: order.payment_expires_at,
+        }
+      : null;
+
+  return {
+    id: order.id,
+    orderNumber: order.code,
+    date: order.created_at,
+    status: mapStatus(order.status_label || order.status),
+    items,
+    total: order.total || "0",
+    deliveryAddress,
+    paymentMethod: paymentMap[order.payment_method] || order.payment_method,
+    paymentStatus: order.payment_status ?? null,
+    paymentProvider: order.payment_provider ?? null,
+    pixPayment,
+  };
+}
+
+function mapStatus(status: string): Order["status"] {
+  if (!status) return "Aguardando Confirmação";
+
+  const statusMap: Record<string, Order["status"]> = {
+    Entregue: "Entregue",
+    "Saiu para entrega": "Saiu para entrega",
+    Preparando: "Preparando",
+    "Aguardando Confirmação": "Aguardando Confirmação",
+    Confirmado: "Confirmado",
+    Cancelado: "Cancelado",
+    delivered: "Entregue",
+    in_transit: "Saiu para entrega",
+    preparing: "Preparando",
+    waiting_confirmation: "Aguardando Confirmação",
+    canceled: "Cancelado",
+  };
+  return statusMap[status] || "Aguardando Confirmação";
+}
+
+function getPaymentStatusLabel(status?: string | null): string | null {
+  if (!status) return null;
+  const labels: Record<string, string> = {
+    pending: "Aguardando pagamento PIX",
+    paid: "PIX pago",
+    expired: "PIX expirado",
+    cancelled: "PIX cancelado",
+    failed: "Pagamento falhou",
+    refunded: "Reembolsado",
+  };
+  return labels[status] || status;
 }
 
 export function OrdersPage() {
   const { user } = useUser();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const orderIdFromUrl = searchParams.get("orderId");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
-
-  const mapStatus = (status: string): Order["status"] => {
-    if (!status) return "Aguardando Confirmação";
-
-    const statusMap: Record<string, Order["status"]> = {
-      Entregue: "Entregue",
-      "Saiu para entrega": "Saiu para entrega",
-      Preparando: "Preparando",
-      "Aguardando Confirmação": "Aguardando Confirmação",
-      Confirmado: "Confirmado",
-      Cancelado: "Cancelado",
-      delivered: "Entregue",
-      in_transit: "Saiu para entrega",
-      preparing: "Preparando",
-      waiting_confirmation: "Aguardando Confirmação",
-      canceled: "Cancelado",
-    };
-    return statusMap[status] || "Aguardando Confirmação";
-  };
-
-  const getPaymentMethodLabel = (method: string): string => {
-    const paymentMap: Record<string, string> = {
-      credit: "Cartão de Crédito",
-      debit: "Cartão de Débito",
-      pix: "PIX",
-      boleto: "Boleto Bancário",
-      dinheiro: "Dinheiro",
-    };
-    return paymentMap[method] || method;
-  };
 
   const loadOrders = useCallback(async () => {
     if (!user || !user.accessToken) {
@@ -115,44 +187,7 @@ export function OrdersPage() {
       const data = await response.json();
 
       if (data.success && Array.isArray(data.data)) {
-        const mappedOrders: Order[] = data.data.map((order: any) => {
-          const items: OrderItem[] =
-            order.products?.map((product: any) => ({
-              id: product.id || product.product?.id || "",
-              name: product.product?.name || "Produto",
-              price: product.price || "0",
-              quantity: product.amount || 0,
-              image:
-                product.product?.images?.[0] ||
-                "/placeholder.svg?height=80&width=80",
-              pharmacyName:
-                product.pharmacy?.name || order.pharmacy?.name || null,
-              variationOption: product.variationOption
-                ? {
-                    typeName: product.variationOption.typeName,
-                    optionName: product.variationOption.optionName,
-                  }
-                : null,
-            })) || [];
-
-          const address = order.address;
-          const deliveryAddress = address
-            ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
-            : "Endereço não disponível";
-
-          return {
-            id: order.id,
-            orderNumber: order.code,
-            date: order.created_at,
-            status: mapStatus(order.status_label || order.status),
-            items,
-            total: order.total || "0",
-            deliveryAddress,
-            paymentMethod: getPaymentMethodLabel(order.payment_method),
-          };
-        });
-
-        setOrders(mappedOrders);
+        setOrders(data.data.map((order: any) => mapApiOrder(order)));
       } else {
         setOrders([]);
       }
@@ -168,13 +203,17 @@ export function OrdersPage() {
     loadOrders();
   }, [loadOrders]);
 
-  const fetchOrderDetails = async (orderId: string) => {
+  const fetchOrderDetails = useCallback(async (orderId: string, silent = false) => {
     if (!user || !user.accessToken) {
-      alert("Usuário não autenticado");
+      if (!silent) {
+        alert("Usuário não autenticado");
+      }
       return;
     }
 
-    setLoadingOrderDetails(true);
+    if (!silent) {
+      setLoadingOrderDetails(true);
+    }
     try {
       const response = await fetch(
         `${API_BASE_URL}/api/customer/orders/${orderId}`,
@@ -194,52 +233,50 @@ export function OrdersPage() {
       const data = await response.json();
 
       if (data.success && data.data) {
-        const order = data.data;
-
-        const items: OrderItem[] =
-          order.products?.map((product: any) => ({
-            id: product.id || product.product?.id || "",
-            name: product.product?.name || "Produto",
-            price: product.price || "0",
-            quantity: product.amount || 0,
-            image:
-              product.product?.images?.[0] ||
-              "/placeholder.svg?height=80&width=80",
-            pharmacyName:
-              product.pharmacy?.name || order.pharmacy?.name || null,
-            variationOption: product.variationOption
-              ? {
-                  typeName: product.variationOption.typeName,
-                  optionName: product.variationOption.optionName,
-                }
-              : null,
-          })) || [];
-
-        const address = order.address;
-        const deliveryAddress = address
-          ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
-          : "Endereço não disponível";
-
-        const detailedOrder: Order = {
-          id: order.id,
-          orderNumber: order.code,
-          date: order.created_at,
-          status: mapStatus(order.status_label || order.status),
-          items,
-          total: order.total || "0",
-          deliveryAddress,
-          paymentMethod: getPaymentMethodLabel(order.payment_method),
-        };
-
-        setSelectedOrder(detailedOrder);
+        setSelectedOrder(mapApiOrder(data.data));
       }
     } catch (err) {
       console.error("Error loading order details:", err);
       alert("Erro ao carregar detalhes do pedido. Tente novamente.");
     } finally {
-      setLoadingOrderDetails(false);
+      if (!silent) {
+        setLoadingOrderDetails(false);
+      }
     }
+  }, [user]);
+
+  useEffect(() => {
+    if (!orderIdFromUrl || !user?.accessToken) {
+      return;
+    }
+    fetchOrderDetails(orderIdFromUrl);
+  }, [orderIdFromUrl, user?.accessToken, fetchOrderDetails]);
+
+  const handleBackToOrders = () => {
+    setSelectedOrder(null);
+    router.replace("/pedidos");
   };
+
+  useEffect(() => {
+    if (
+      !selectedOrder ||
+      selectedOrder.paymentStatus !== "pending" ||
+      !user?.accessToken
+    ) {
+      return;
+    }
+
+    const interval = window.setInterval(() => {
+      fetchOrderDetails(selectedOrder.id, true);
+    }, 5000);
+
+    return () => window.clearInterval(interval);
+  }, [
+    selectedOrder?.id,
+    selectedOrder?.paymentStatus,
+    user?.accessToken,
+    fetchOrderDetails,
+  ]);
 
   const getStatusIcon = (status: Order["status"]) => {
     switch (status) {
@@ -305,13 +342,22 @@ export function OrdersPage() {
     return (
       <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
         <div className="mb-4 sm:mb-6">
-          <Button
-            variant="outline"
-            onClick={() => setSelectedOrder(null)}
-            className="mb-3 sm:mb-4 text-xs sm:text-sm"
-          >
-            ← Voltar aos Pedidos
-          </Button>
+          <div className="flex flex-wrap gap-2 sm:gap-3 mb-3 sm:mb-4">
+            <Button
+              variant="outline"
+              onClick={handleBackToOrders}
+              className="text-xs sm:text-sm"
+            >
+              ← Voltar aos Pedidos
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => router.push("/")}
+              className="text-xs sm:text-sm"
+            >
+              Produtos
+            </Button>
+          </div>
           <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary">
             Detalhes do Pedido
           </h1>
@@ -439,8 +485,29 @@ export function OrdersPage() {
                   Pagamento
                 </CardTitle>
               </CardHeader>
-              <CardContent>
+              <CardContent className="space-y-4">
                 <p className="text-sm">{selectedOrder.paymentMethod}</p>
+                {getPaymentStatusLabel(selectedOrder.paymentStatus) && (
+                  <Badge
+                    variant="outline"
+                    className={
+                      selectedOrder.paymentStatus === "paid"
+                        ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                        : "bg-amber-50 text-amber-900 border-amber-200"
+                    }
+                  >
+                    {getPaymentStatusLabel(selectedOrder.paymentStatus)}
+                  </Badge>
+                )}
+                {selectedOrder.pixPayment && (
+                  <PixPaymentPanel
+                    orderId={selectedOrder.id}
+                    payment={selectedOrder.pixPayment}
+                    totalAmountCents={Math.round(
+                      parseFloat(selectedOrder.total) * 100,
+                    )}
+                  />
+                )}
               </CardContent>
             </Card>
 
@@ -517,7 +584,9 @@ export function OrdersPage() {
             <Card
               key={order.id}
               className="cursor-pointer"
-              onClick={() => fetchOrderDetails(order.id)}
+              onClick={() => {
+                router.push(`/pedidos?orderId=${order.id}`);
+              }}
             >
               <CardContent className="p-3 sm:p-6">
                 <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0 mb-3 sm:mb-4">
@@ -540,14 +609,24 @@ export function OrdersPage() {
                     </div>
                   </div>
                   <div className="text-left sm:text-right">
-                    <Badge
-                      className={`${getStatusColor(order.status)} border mb-2 text-xs`}
-                    >
-                      <div className="flex items-center space-x-1">
-                        {getStatusIcon(order.status)}
-                        <span className="text-xs">{order.status}</span>
-                      </div>
-                    </Badge>
+                    <div className="flex flex-col items-start sm:items-end gap-2 mb-2">
+                      <Badge
+                        className={`${getStatusColor(order.status)} border text-xs`}
+                      >
+                        <div className="flex items-center space-x-1">
+                          {getStatusIcon(order.status)}
+                          <span className="text-xs">{order.status}</span>
+                        </div>
+                      </Badge>
+                      {order.paymentStatus === "pending" && (
+                        <Badge
+                          variant="outline"
+                          className="bg-amber-50 text-amber-900 border-amber-200 text-xs"
+                        >
+                          Aguardando PIX
+                        </Badge>
+                      )}
+                    </div>
                     <div className="price text-base sm:text-lg">
                       R$ {order.total}
                     </div>

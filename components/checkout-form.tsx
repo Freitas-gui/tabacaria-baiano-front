@@ -13,6 +13,27 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
+import {
+  formatBrazilianPhone,
+  isValidBrazilianPhone,
+  unmaskPhone,
+} from "@/lib/phone";
+
+function resolveCreatedOrderId(data: {
+  order_id?: string;
+  data?: { id?: string } | Array<{ id?: string }>;
+}): string | null {
+  if (data.order_id) {
+    return data.order_id;
+  }
+  if (data.data && !Array.isArray(data.data) && data.data.id) {
+    return data.data.id;
+  }
+  if (Array.isArray(data.data) && data.data[0]?.id) {
+    return data.data[0].id;
+  }
+  return null;
+}
 
 export function CheckoutForm() {
   const { items, updateQuantity, removeFromCart, getTotalPrice, clearCart } =
@@ -44,14 +65,13 @@ export function CheckoutForm() {
     city: "",
     state: "",
     zipCode: "",
-    paymentMethod: "pix",
   });
 
   useEffect(() => {
     if (user?.address) {
       setFormData({
         email: user.email,
-        phone: user.phone || "",
+        phone: formatBrazilianPhone(user.phone || ""),
         street: user.address.street || "",
         street_number: user.address.street_number || "",
         address_details: user.address.address_details || "",
@@ -59,12 +79,11 @@ export function CheckoutForm() {
         city: user.address.city || "",
         state: user.address.state || "",
         zipCode: user.address.postal_code || "",
-        paymentMethod: "pix",
       });
     } else if (user) {
       setFormData({
         email: user.email,
-        phone: user.phone || "",
+        phone: formatBrazilianPhone(user.phone || ""),
         street: "",
         street_number: "",
         address_details: "",
@@ -72,7 +91,6 @@ export function CheckoutForm() {
         city: "",
         state: "",
         zipCode: "",
-        paymentMethod: "pix",
       });
     }
   }, [user]);
@@ -173,6 +191,13 @@ export function CheckoutForm() {
     });
   };
 
+  const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setFormData({
+      ...formData,
+      phone: formatBrazilianPhone(e.target.value),
+    });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -205,6 +230,11 @@ export function CheckoutForm() {
 
     if (stockErrors.length > 0) {
       alert(stockErrors.join("\n"));
+      return;
+    }
+
+    if (!isValidBrazilianPhone(formData.phone)) {
+      alert("Informe um telefone válido com DDD (10 ou 11 dígitos).");
       return;
     }
 
@@ -244,11 +274,10 @@ export function CheckoutForm() {
           : {}),
       }));
 
-      console.log("Products array:", products);
-
       const requestBody = {
         user_id: user.id,
-        payment_method: formData.paymentMethod,
+        payment_method: "pix",
+        phone: unmaskPhone(formData.phone),
         address: {
           street: formData.street,
           street_number: formData.street_number,
@@ -261,8 +290,6 @@ export function CheckoutForm() {
         products: products,
       };
 
-      console.log("Request body:", JSON.stringify(requestBody, null, 2));
-
       const response = await fetch(`${API_BASE_URL}/api/customer/orders`, {
         method: "POST",
         headers: {
@@ -273,10 +300,8 @@ export function CheckoutForm() {
       });
 
       const data = await response.json();
-      console.log("API Response:", data);
 
       if (!response.ok) {
-        console.error("API Error:", data);
         let errorMessage = "Erro ao criar pedido";
 
         if (data.errors && Array.isArray(data.errors)) {
@@ -299,27 +324,21 @@ export function CheckoutForm() {
         return;
       }
 
-      const modal = document.createElement("dialog");
-      modal.style.padding = "2rem";
-      modal.style.borderRadius = "12px";
-      modal.style.background = "#ffffff";
-      modal.style.color = "#2b2b2b";
-      modal.style.border = "1px solid #e2d8cc";
-      modal.innerHTML = `
-      <div style="text-align:center;font-family:system-ui,sans-serif;">
-        <h2 style="color:#a47148;font-size:1.5rem;margin-bottom:1rem;font-weight:700;">Pedido realizado com sucesso!</h2>
-        <p style="margin-bottom:1rem;color:#6f6f6f;">${items.length} produtos foram comprados.</p>
-        <button id="close-modal" style="background:#a47148;color:#ffffff;padding:0.6rem 1.25rem;border:none;border-radius:10px;font-size:1rem;cursor:pointer;font-weight:600;">OK</button>
-      </div>
-      `;
-      document.body.appendChild(modal);
-      modal.showModal();
-      modal.querySelector("#close-modal")?.addEventListener("click", () => {
-        modal.close();
-        modal.remove();
+      const createdOrderId = resolveCreatedOrderId(data);
+      if (createdOrderId) {
         clearCart();
-        router.push("/pedidos");
-      });
+        router.push(`/pedidos?orderId=${createdOrderId}`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      clearCart();
+      alert(
+        data.message ||
+          "Pedido criado com sucesso. Aguarde a confirmação do pagamento.",
+      );
+      router.push("/pedidos");
+      setIsSubmitting(false);
     } catch (error) {
       console.error("Error creating order:", error);
       alert("Erro ao conectar com o servidor. Tente novamente.");
@@ -635,20 +654,29 @@ export function CheckoutForm() {
 
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Forma de Pagamento *
+                      Telefone *
                     </label>
-                    <select
-                      name="paymentMethod"
-                      value={formData.paymentMethod}
-                      onChange={handleInputChange}
-                      className="w-full p-2 sm:p-3 border rounded-md focus:outline-none focus:ring-2 focus:ring-theme-accent focus:border-theme-accent text-sm sm:text-base"
+                    <Input
+                      name="phone"
+                      type="tel"
+                      inputMode="numeric"
+                      value={formData.phone}
+                      onChange={handlePhoneChange}
                       required
-                    >
-                      <option value="pix">PIX</option>
-                      <option value="dinheiro">Dinheiro</option>
-                      <option value="credit">Cartão de Crédito</option>
-                      <option value="debit">Cartão de Débito</option>
-                    </select>
+                      placeholder="11 9876-54321"
+                      maxLength={14}
+                      className="focus:border-theme-accent text-sm sm:text-base"
+                    />
+                  </div>
+
+                  <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
+                    <p className="text-xs sm:text-sm font-medium text-theme-primary">
+                      Pagamento via PIX
+                    </p>
+                    <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                      Após finalizar, você receberá o QR Code e o código copia e
+                      cola para pagar no app do seu banco.
+                    </p>
                   </div>
 
                   <Button
@@ -702,6 +730,7 @@ export function CheckoutForm() {
           )}
         </div>
       </div>
+
     </div>
   );
 }
