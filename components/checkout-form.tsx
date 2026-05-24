@@ -18,9 +18,11 @@ import {
   isValidBrazilianPhone,
   unmaskPhone,
 } from "@/lib/phone";
+import { storePixPaymentForOrder } from "@/lib/pix-payment";
 
 function resolveCreatedOrderId(data: {
   order_id?: string;
+  payment?: { id?: string };
   data?: { id?: string } | Array<{ id?: string }>;
 }): string | null {
   if (data.order_id) {
@@ -326,6 +328,14 @@ export function CheckoutForm() {
 
       const createdOrderId = resolveCreatedOrderId(data);
       if (createdOrderId) {
+        if (data.payment?.brCode) {
+          storePixPaymentForOrder(createdOrderId, {
+            id: data.payment.id,
+            brCode: data.payment.brCode,
+            brCodeBase64: data.payment.brCodeBase64,
+            expiresAt: data.payment.expiresAt,
+          });
+        }
         clearCart();
         router.push(`/pedidos?orderId=${createdOrderId}`);
         setIsSubmitting(false);

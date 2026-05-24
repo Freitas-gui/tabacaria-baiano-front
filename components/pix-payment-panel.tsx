@@ -65,7 +65,7 @@ export function PixPaymentPanel({
         )}
       </div>
 
-      {payment.brCodeBase64 && (
+      {payment.brCodeBase64 ? (
         <div className="flex justify-center">
           <img
             src={pixQrCodeSrc(payment.brCodeBase64)}
@@ -73,7 +73,7 @@ export function PixPaymentPanel({
             className="w-48 h-48 sm:w-56 sm:h-56 rounded-lg border border-border bg-white p-2"
           />
         </div>
-      )}
+      ) : null}
 
       <div className="space-y-2">
         <p className="text-sm text-muted-foreground">

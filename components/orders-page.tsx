@@ -20,6 +20,12 @@ import { useUser } from "@/contexts/user-context";
 import { API_BASE_URL } from "@/lib/api";
 import { PixPaymentPanel } from "@/components/pix-payment-panel";
 import type { PixPaymentPayload } from "@/lib/pix-payment";
+import {
+  buildPixPaymentPayload,
+  clearStoredPixPaymentForOrder,
+  isAwaitingPixPayment,
+  readStoredPixPaymentForOrder,
+} from "@/lib/pix-payment";
 
 interface VariationOption {
   typeName: string;
@@ -92,16 +98,9 @@ function mapApiOrder(order: any): Order {
     boleto: "Boleto Bancário",
   };
 
-  const pixPayment =
-    order.payment_status === "pending" &&
-    order.pix_copy_paste &&
-    order.pix_qrcode_base64
-      ? {
-          brCode: order.pix_copy_paste,
-          brCodeBase64: order.pix_qrcode_base64,
-          expiresAt: order.payment_expires_at,
-        }
-      : null;
+  const pixPayment = isAwaitingPixPayment(order)
+    ? buildPixPaymentPayload(order)
+    : null;
 
   return {
     id: order.id,
@@ -233,7 +232,23 @@ export function OrdersPage() {
       const data = await response.json();
 
       if (data.success && data.data) {
-        setSelectedOrder(mapApiOrder(data.data));
+        const mappedOrder = mapApiOrder(data.data);
+        const storedPixPayment = readStoredPixPaymentForOrder(orderId);
+
+        if (!mappedOrder.pixPayment && storedPixPayment) {
+          mappedOrder.pixPayment = storedPixPayment;
+        }
+
+        if (
+          mappedOrder.paymentStatus &&
+          ["paid", "expired", "cancelled", "canceled", "failed", "refunded"].includes(
+            mappedOrder.paymentStatus,
+          )
+        ) {
+          clearStoredPixPaymentForOrder(orderId);
+        }
+
+        setSelectedOrder(mappedOrder);
       }
     } catch (err) {
       console.error("Error loading order details:", err);
@@ -260,7 +275,7 @@ export function OrdersPage() {
   useEffect(() => {
     if (
       !selectedOrder ||
-      selectedOrder.paymentStatus !== "pending" ||
+      !selectedOrder.pixPayment ||
       !user?.accessToken
     ) {
       return;
@@ -273,7 +288,7 @@ export function OrdersPage() {
     return () => window.clearInterval(interval);
   }, [
     selectedOrder?.id,
-    selectedOrder?.paymentStatus,
+    selectedOrder?.pixPayment,
     user?.accessToken,
     fetchOrderDetails,
   ]);
