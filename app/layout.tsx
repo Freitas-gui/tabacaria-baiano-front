@@ -4,7 +4,7 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import { CartProvider } from "@/contexts/cart-context";
 import { UserProvider } from "@/contexts/user-context";
-import { AgeGate } from "@/components/age-gate";
+import { CDN_ORIGIN } from "@/lib/cdn";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -20,10 +20,14 @@ export default function RootLayout({
 }) {
   return (
     <html lang="pt-BR">
+      <head>
+        <link rel="preconnect" href={CDN_ORIGIN} crossOrigin="anonymous" />
+        <link rel="dns-prefetch" href={CDN_ORIGIN} />
+      </head>
       <body className={inter.className}>
         <UserProvider>
           <CartProvider>
-            <AgeGate>{children}</AgeGate>
+            {children}
           </CartProvider>
         </UserProvider>
       </body>

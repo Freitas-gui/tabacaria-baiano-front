@@ -2,9 +2,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
+import { DeliveryRegionField } from "@/components/delivery-region-field";
+import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
 
 export default function RegisterPage() {
   const router = useRouter();
+  const { regions, loading: loadingRegions, error: regionsError } =
+    useDeliveryRegions();
   const [form, setForm] = useState({
     nome: "",
     telefone: "",
@@ -26,6 +30,10 @@ export default function RegisterPage() {
     setForm({ ...form, [e.target.name]: e.target.value });
   };
 
+  const handleRegionChange = (regionName: string) => {
+    setForm({ ...form, bairro: regionName });
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -45,6 +53,12 @@ export default function RegisterPage() {
       !form.numero
     ) {
       setError("Preencha todos os campos obrigatórios.");
+      setLoading(false);
+      return;
+    }
+
+    if (!regions.some((region) => region.name === form.bairro)) {
+      setError("Selecione uma região de entrega válida.");
       setLoading(false);
       return;
     }
@@ -188,15 +202,16 @@ export default function RegisterPage() {
               maxLength={2}
             />
           </div>
-          <input
-            name="bairro"
-            type="text"
-            placeholder="Bairro *"
+          <DeliveryRegionField
+            id="register-region"
+            regions={regions}
             value={form.bairro}
-            onChange={handleChange}
-            className="w-full px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
-            required
+            onChange={handleRegionChange}
+            loading={loadingRegions}
+            error={regionsError}
             disabled={loading}
+            showPrice={false}
+            selectClassName="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground shadow-sm"
           />
           <div className="grid grid-cols-3 gap-4">
             <input

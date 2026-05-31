@@ -17,6 +17,7 @@ import {
   productMatchesAnyChild,
   productMatchesLeaf,
 } from "@/lib/categories";
+import { getProductPath } from "@/lib/product-slug";
 
 type ProductVariation = {
   typeName: string;
@@ -28,6 +29,7 @@ type ProductVariation = {
 type Product = {
   id: string;
   pharmacyProductId?: string | null;
+  slug?: string | null;
   reference: string | null;
   name: string;
   description?: string | null;
@@ -117,6 +119,7 @@ export function HomepageContent() {
             pharmacyProductId: p?.pharmacyProductId
               ? String(p.pharmacyProductId)
               : null,
+            slug: p?.slug ? String(p.slug) : null,
             reference: p?.reference ? String(p.reference) : null,
             name: String(p?.name ?? "").trim(),
             description: p?.description ? String(p.description) : null,
@@ -291,8 +294,7 @@ export function HomepageContent() {
   };
 
   const handleProductClick = (product: Product) => {
-    localStorage.setItem("selectedProduct", JSON.stringify(product));
-    router.push("/produto");
+    router.push(getProductPath(product));
   };
 
   const getDisplayTitle = () =>
@@ -375,6 +377,8 @@ export function HomepageContent() {
                       alt={parent.name}
                       width={90}
                       height={90}
+                      sizes="90px"
+                      loading="lazy"
                       className="mx-auto h-[90px] w-[90px] object-contain"
                     />
                   </div>
@@ -463,9 +467,10 @@ export function HomepageContent() {
                   <Image
                     src={product.image || "/images/products/"}
                     alt={product.name}
-                    width={200}
-                    height={200}
-                    className="w-full h-full object-contain p-1 sm:p-2"
+                    fill
+                    sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
+                    loading="lazy"
+                    className="object-contain p-1 sm:p-2"
                   />
                 </div>
 

@@ -3,11 +3,12 @@ import { useCart } from "@/contexts/cart-context";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import Image from "next/image";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 import { extractProductImageUrls } from "@/lib/product-images";
+import { getProductPath } from "@/lib/product-slug";
+import { ProductImageFrame } from "@/components/product-image-frame";
 
 // ---- Types ----
 type Pharmacy = {
@@ -28,6 +29,7 @@ type Variation = {
 type Product = {
   id: string;
   pharmacyProductId?: string | null;
+  slug?: string | null;
   reference: string | null;
   name: string;
   description: string | null;
@@ -53,7 +55,7 @@ const defaultProduct: Product & {
   description: null,
 };
 
-export function ProductDetail() {
+export function ProductDetail({ slug }: { slug: string }) {
   const { addToCart, items } = useCart();
   const router = useRouter();
 
@@ -66,6 +68,7 @@ export function ProductDetail() {
     stock: number | null;
   } | null>(null);
   const [loadingProductDetail, setLoadingProductDetail] = useState(false);
+  const [productNotFound, setProductNotFound] = useState(false);
   const [variations, setVariations] = useState<Variation[]>([]);
   const [selectedVariationOptionId, setSelectedVariationOptionId] = useState<
     string | null
@@ -98,6 +101,7 @@ export function ProductDetail() {
             pharmacyProductId: p?.pharmacyProductId
               ? String(p.pharmacyProductId)
               : null,
+            slug: p?.slug ? String(p.slug) : null,
             reference: p?.reference ? String(p.reference) : null,
             name: String(p?.name ?? "").trim(),
             description: p?.description ? String(p.description) : null,
@@ -124,88 +128,109 @@ export function ProductDetail() {
     }
   }, []);
 
+  const applyDetailData = useCallback((data: Record<string, unknown>) => {
+    const categoryName =
+      typeof data.category === "string"
+        ? data.category
+        : data.category &&
+            typeof data.category === "object" &&
+            "name" in data.category
+          ? String((data.category as { name?: string }).name ?? "")
+          : null;
+
+    const images = Array.isArray(data.images)
+      ? data.images.map((image) => String(image))
+      : [];
+
+    setProduct((prev) => ({
+      ...prev,
+      id: data.id ? String(data.id) : prev.id,
+      slug: data.slug ? String(data.slug) : prev.slug,
+      name: data.name ? String(data.name).trim() : prev.name,
+      description: data.description ? String(data.description) : prev.description,
+      reference: data.ean ? String(data.ean) : prev.reference,
+      category: categoryName ?? prev.category,
+      price: data.price ? String(data.price) : prev.price,
+      pharmacyProductId: data.pharmacyProductId
+        ? String(data.pharmacyProductId)
+        : prev.pharmacyProductId,
+      image: images.length > 0 ? images[0] : prev.image,
+      additionalImages: images.length > 1 ? images.slice(1) : prev.additionalImages,
+      keywords: Array.isArray(data.keywords)
+        ? data.keywords.map((keyword) => String(keyword))
+        : prev.keywords,
+    }));
+
+    if (
+      data.pharmacy &&
+      typeof data.pharmacy === "object" &&
+      "name" in data.pharmacy
+    ) {
+      setCurrentPharmacy({
+        name: String((data.pharmacy as { name?: string }).name ?? ""),
+        stock:
+          data.stock !== undefined && data.stock !== null
+            ? Number(data.stock)
+            : null,
+      });
+    }
+
+    if (Array.isArray(data.otherPharmacies)) {
+      setOtherPharmacies(data.otherPharmacies as Pharmacy[]);
+    } else {
+      setOtherPharmacies([]);
+    }
+
+    if (Array.isArray(data.variations) && data.variations.length > 0) {
+      const parsed: Variation[] = data.variations
+        .filter(
+          (variation) =>
+            typeof variation === "object" &&
+            variation !== null &&
+            "stock" in variation &&
+            variation.stock !== undefined &&
+            variation.stock !== null &&
+            Number(variation.stock) > 0,
+        )
+        .map((variation) => {
+          const item = variation as Record<string, unknown>;
+          return {
+            typeName: String(item.typeName ?? ""),
+            optionId: String(item.optionId ?? ""),
+            optionName: String(item.optionName ?? ""),
+            stock: Number(item.stock),
+          };
+        });
+      setVariations(parsed);
+      setSelectedVariationOptionId(parsed[0]?.optionId ?? null);
+    } else {
+      setVariations([]);
+      setSelectedVariationOptionId(null);
+    }
+  }, []);
+
   const loadProductDetail = useCallback(async (pharmacyProductId: string) => {
     if (!pharmacyProductId) {
-      console.log("loadProductDetail: No pharmacyProductId provided");
       return;
     }
 
     try {
       setLoadingProductDetail(true);
-      const url = `${API_BASE_URL}/api/product/show/${pharmacyProductId}`;
-      console.log("Loading product detail from:", url);
+      const res = await fetch(
+        `${API_BASE_URL}/api/product/show/${pharmacyProductId}`,
+      );
 
-      const res = await fetch(url);
-
-      if (res.status === 204) {
-        console.log("Product not found (204)");
-        setOtherPharmacies([]);
-        setCurrentPharmacy(null);
-        return;
-      }
-
-      if (!res.ok) {
-        console.error("Error response:", res.status, res.statusText);
+      if (res.status === 204 || !res.ok) {
         setOtherPharmacies([]);
         setCurrentPharmacy(null);
         return;
       }
 
       const json = await res.json();
-      console.log("Product detail API response:", json);
       const data = json.data || json;
 
       if (data) {
-        if (data.pharmacy) {
-          setCurrentPharmacy({
-            name: data.pharmacy.name,
-            stock: data.stock ?? null,
-          });
-        }
-
-        if (Array.isArray(data.otherPharmacies)) {
-          console.log("Found other pharmacies:", data.otherPharmacies.length);
-          setOtherPharmacies(data.otherPharmacies);
-        } else {
-          console.log("No other pharmacies array found");
-          setOtherPharmacies([]);
-        }
-
-        if (data.price) {
-          setProduct((prev) => ({
-            ...prev,
-            price: data.price,
-            pharmacyProductId: data.pharmacyProductId || pharmacyProductId,
-          }));
-        }
-
-        if (
-          data.images &&
-          Array.isArray(data.images) &&
-          data.images.length > 0
-        ) {
-          setProduct((prev) => ({
-            ...prev,
-            image: data.images[0],
-            additionalImages: data.images.slice(1),
-          }));
-        }
-
-        if (Array.isArray(data.variations) && data.variations.length > 0) {
-          const parsed: Variation[] = data.variations
-            .filter((v: any) => v.stock !== undefined && v.stock !== null && Number(v.stock) > 0)
-            .map((v: any) => ({
-              typeName: String(v.typeName ?? ""),
-              optionId: String(v.optionId ?? ""),
-              optionName: String(v.optionName ?? ""),
-              stock: Number(v.stock),
-            }));
-          setVariations(parsed);
-          setSelectedVariationOptionId(parsed[0]?.optionId ?? null);
-        } else {
-          setVariations([]);
-          setSelectedVariationOptionId(null);
-        }
+        applyDetailData(data as Record<string, unknown>);
       }
     } catch (error) {
       console.error("Error loading product detail:", error);
@@ -214,7 +239,43 @@ export function ProductDetail() {
     } finally {
       setLoadingProductDetail(false);
     }
-  }, []);
+  }, [applyDetailData]);
+
+  const loadProductBySlug = useCallback(async (productSlug: string) => {
+    if (!productSlug) {
+      setProductNotFound(true);
+      return;
+    }
+
+    try {
+      setLoadingProductDetail(true);
+      setProductNotFound(false);
+      setSelectedImageIndex(0);
+
+      const res = await fetch(
+        `${API_BASE_URL}/api/product/slug/${encodeURIComponent(productSlug)}`,
+      );
+
+      if (res.status === 204 || !res.ok) {
+        setProductNotFound(true);
+        return;
+      }
+
+      const json = await res.json();
+      const data = json.data || json;
+
+      if (data) {
+        applyDetailData(data as Record<string, unknown>);
+      } else {
+        setProductNotFound(true);
+      }
+    } catch (error) {
+      console.error("Error loading product by slug:", error);
+      setProductNotFound(true);
+    } finally {
+      setLoadingProductDetail(false);
+    }
+  }, [applyDetailData]);
 
   const loadOtherPharmacies = useCallback(async (pharmacyProductId: string) => {
     if (!pharmacyProductId) return;
@@ -254,15 +315,7 @@ export function ProductDetail() {
 
   const handlePharmacyClick = (pharmacyProductId: string) => {
     if (pharmacyProductId) {
-      localStorage.setItem(
-        "selectedProduct",
-        JSON.stringify({
-          ...product,
-          pharmacyProductId: pharmacyProductId,
-        }),
-      );
-      router.push("/produto");
-      window.location.reload();
+      loadProductDetail(pharmacyProductId);
     }
   };
 
@@ -275,71 +328,10 @@ export function ProductDetail() {
     [product.image, product.additionalImages],
   );
 
-  // Load product data from localStorage when component mounts and scroll to top
   useEffect(() => {
     window.scrollTo(0, 0);
-
-    const selectedProduct = localStorage.getItem("selectedProduct");
-    if (selectedProduct) {
-      try {
-        const productData = JSON.parse(selectedProduct);
-        console.log("Product data from localStorage:", productData);
-        const productDataParsed: Product = {
-          id: String(productData?.id ?? ""),
-          pharmacyProductId: productData?.pharmacyProductId
-            ? String(productData.pharmacyProductId)
-            : null,
-          reference: productData?.reference ?? null,
-          name: String(productData?.name ?? "").trim(),
-          description: productData?.description ?? null,
-          price:
-            productData?.price === null || productData?.price === undefined
-              ? null
-              : String(productData.price),
-          category: productData?.category ?? null,
-          image: productData?.image ?? null,
-          additionalImages: Array.isArray(productData?.additionalImages)
-            ? productData.additionalImages
-            : [],
-          keywords: Array.isArray(productData?.keywords)
-            ? productData.keywords
-            : [],
-        };
-        console.log(
-          "Parsed product with pharmacyProductId:",
-          productDataParsed.pharmacyProductId,
-        );
-        setProduct(productDataParsed);
-        setSelectedImageIndex(0);
-
-        if (productDataParsed.pharmacyProductId) {
-          console.log(
-            "Immediately loading product detail for:",
-            productDataParsed.pharmacyProductId,
-          );
-          loadProductDetail(productDataParsed.pharmacyProductId);
-        }
-      } catch (error) {
-        console.error("Error parsing product data:", error);
-      }
-    } else {
-      console.log("No product found in localStorage");
-    }
-  }, [loadProductDetail]);
-
-  // Load product details and other pharmacies when product has pharmacyProductId (backup)
-  useEffect(() => {
-    console.log(
-      "Product pharmacyProductId changed:",
-      product.pharmacyProductId,
-    );
-    if (product.pharmacyProductId && !loadingProductDetail) {
-      console.log("Loading product detail for:", product.pharmacyProductId);
-      loadProductDetail(product.pharmacyProductId);
-    } else if (!product.pharmacyProductId) {
-      console.log("No pharmacyProductId available, skipping load");
-    }
-  }, [product.pharmacyProductId]);
+    loadProductBySlug(slug);
+  }, [slug, loadProductBySlug]);
 
   const selectedVariation = variations.find(
     (v) => v.optionId === selectedVariationOptionId,
@@ -484,10 +476,7 @@ export function ProductDetail() {
   };
 
   const handleRelatedProductClick = (relatedProduct: Product) => {
-    localStorage.setItem("selectedProduct", JSON.stringify(relatedProduct));
-    setProduct(relatedProduct);
-    setSelectedImageIndex(0);
-    router.push("/produto");
+    router.push(getProductPath(relatedProduct));
     window.scrollTo(0, 0);
   };
 
@@ -499,71 +488,67 @@ export function ProductDetail() {
     );
   }, [products, product]);
 
+  if (productNotFound) {
+    return (
+      <div className="container mx-auto px-4 py-16 text-center">
+        <h1 className="text-xl sm:text-2xl font-semibold text-theme-primary mb-3">
+          Produto não encontrado
+        </h1>
+        <p className="text-sm sm:text-base text-muted-foreground mb-6">
+          O produto que você procura não está disponível ou o link pode estar
+          incorreto.
+        </p>
+        <Button onClick={() => router.push("/")} className="btn-theme-primary">
+          Voltar para a loja
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8">
-        {/* Thumbnails - Hidden on mobile, shown on desktop */}
-        {productImages.length > 1 && (
-          <div className="hidden lg:block lg:col-span-2">
-            <div className="space-y-2">
-              {productImages.map((imageUrl, index) => (
-                <div
-                  key={index}
-                  className={`border rounded p-2 cursor-pointer transition-all aspect-square bg-muted overflow-hidden ${
-                    selectedImageIndex === index
-                      ? "border-theme-accent ring-2 ring-theme-accent"
-                      : "border-border hover:border-theme-accent"
-                  }`}
-                  onClick={() => setSelectedImageIndex(index)}
-                >
-                  <Image
-                    src={imageUrl || "/placeholder.svg"}
-                    alt={`Product thumbnail ${index + 1}`}
-                    width={60}
-                    height={60}
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-              ))}
-            </div>
+        <div className="hidden lg:block lg:col-span-2">
+          <div className="space-y-2">
+            {productImages.map((imageUrl, index) => (
+              <ProductImageFrame
+                key={index}
+                src={imageUrl || "/placeholder.svg"}
+                alt={`Product thumbnail ${index + 1}`}
+                variant="thumb"
+                onClick={() => setSelectedImageIndex(index)}
+                frameClassName={
+                  selectedImageIndex === index
+                    ? "border-theme-accent ring-2 ring-theme-accent"
+                    : "hover:border-theme-accent"
+                }
+              />
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Thumbnails - Horizontal scroll on mobile */}
-        {productImages.length > 1 && (
-          <div className="lg:hidden mb-4">
-            <div className="flex space-x-2 overflow-x-auto pb-2">
-              {productImages.map((imageUrl, index) => (
-                <div
-                  key={index}
-                  className={`border rounded p-1 cursor-pointer transition-all flex-shrink-0 w-16 h-16 sm:w-20 sm:h-20 bg-muted overflow-hidden ${
-                    selectedImageIndex === index
-                      ? "border-theme-accent ring-2 ring-theme-accent"
-                      : "border-border hover:border-theme-accent"
-                  }`}
-                  onClick={() => setSelectedImageIndex(index)}
-                >
-                  <Image
-                    src={imageUrl || "/placeholder.svg"}
-                    alt={`Product thumbnail ${index + 1}`}
-                    width={80}
-                    height={80}
-                    className="w-full h-full object-contain"
-                  />
-                </div>
-              ))}
-            </div>
+        <div className="lg:hidden mb-4">
+          <div className="flex space-x-2 overflow-x-auto pb-2">
+            {productImages.map((imageUrl, index) => (
+              <ProductImageFrame
+                key={index}
+                src={imageUrl || "/placeholder.svg"}
+                alt={`Product thumbnail ${index + 1}`}
+                variant="thumb-mobile"
+                onClick={() => setSelectedImageIndex(index)}
+                frameClassName={
+                  selectedImageIndex === index
+                    ? "border-theme-accent ring-2 ring-theme-accent"
+                    : "hover:border-theme-accent"
+                }
+              />
+            ))}
           </div>
-        )}
+        </div>
 
-        {/* Main Image */}
-        <div
-          className={
-            productImages.length > 1 ? "lg:col-span-5" : "lg:col-span-7"
-          }
-        >
+        <div className="lg:col-span-5">
           <div
-            className="relative aspect-square bg-muted rounded overflow-hidden max-w-sm mx-auto lg:max-w-none select-none"
+            className="relative max-w-sm mx-auto lg:max-w-none select-none"
             onTouchStart={handleTouchStart}
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
@@ -575,13 +560,13 @@ export function ProductDetail() {
               isDragging.current = false;
             }}
           >
-            <Image
+            <ProductImageFrame
               src={productImages[selectedImageIndex] || "/placeholder.svg"}
               alt={product.name}
-              width={400}
-              height={400}
-              className="w-full h-full object-contain p-2 sm:p-4 pointer-events-none"
+              variant="main"
+              priority
               draggable={false}
+              className="pointer-events-none"
             />
             {productImages.length > 1 && (
               <>
@@ -770,18 +755,15 @@ export function ProductDetail() {
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {relatedProducts.map((relatedProduct) => (
               <Card key={relatedProduct.id} className="flex flex-col">
-                <div className="relative mb-2 sm:mb-4 flex-shrink-0 aspect-square bg-muted rounded overflow-hidden">
-                  <Image
-                    src={
-                      relatedProduct.image ||
-                      "/placeholder.svg?height=200&width=200"
-                    }
-                    alt={relatedProduct.name}
-                    width={150}
-                    height={150}
-                    className="w-full h-full object-contain p-1 sm:p-2"
-                  />
-                </div>
+                <ProductImageFrame
+                  src={
+                    relatedProduct.image ||
+                    "/placeholder.svg?height=200&width=200"
+                  }
+                  alt={relatedProduct.name}
+                  variant="related"
+                  frameClassName="mb-2 sm:mb-4 flex-shrink-0"
+                />
 
                 <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-2 line-clamp-2 min-h-[2.5rem] flex-shrink-0">
                   {relatedProduct.name}

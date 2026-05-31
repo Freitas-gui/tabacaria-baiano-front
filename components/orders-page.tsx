@@ -26,6 +26,8 @@ import {
   isAwaitingPixPayment,
   readStoredPixPaymentForOrder,
 } from "@/lib/pix-payment";
+import { formatCurrency } from "@/lib/delivery-regions";
+import { OrderTotalSummary } from "@/components/order-total-summary";
 
 interface VariationOption {
   typeName: string;
@@ -55,6 +57,9 @@ interface Order {
     | "Cancelado";
   items: OrderItem[];
   total: string;
+  productsSubtotal: number;
+  deliveryFee: number;
+  deliveryRegion?: string | null;
   deliveryAddress: string;
   paymentMethod: string;
   paymentStatus?: string | null;
@@ -102,6 +107,13 @@ function mapApiOrder(order: any): Order {
     ? buildPixPaymentPayload(order)
     : null;
 
+  const deliveryFee = Number.parseFloat(order.delivery_fee || "0") || 0;
+  const productsSubtotal = items.reduce(
+    (sum, item) =>
+      sum + Number.parseFloat(item.price.replace(",", ".")) * item.quantity,
+    0,
+  );
+
   return {
     id: order.id,
     orderNumber: order.code,
@@ -109,6 +121,9 @@ function mapApiOrder(order: any): Order {
     status: mapStatus(order.status_label || order.status),
     items,
     total: order.total || "0",
+    productsSubtotal,
+    deliveryFee,
+    deliveryRegion: address?.district ?? null,
     deliveryAddress,
     paymentMethod: paymentMap[order.payment_method] || order.payment_method,
     paymentStatus: order.payment_status ?? null,
@@ -452,12 +467,11 @@ export function OrdersPage() {
 
                 <Separator className="my-6" />
 
-                <div className="flex justify-between items-center text-xl">
-                  <span className="text-theme-primary font-bold">Total:</span>
-                  <span className="price text-xl">
-                    R$ {selectedOrder.total}
-                  </span>
-                </div>
+                <OrderTotalSummary
+                  productsSubtotal={selectedOrder.productsSubtotal}
+                  freight={selectedOrder.deliveryFee}
+                  selectedRegionName={selectedOrder.deliveryRegion ?? undefined}
+                />
               </CardContent>
             </Card>
           </div>
@@ -643,8 +657,13 @@ export function OrdersPage() {
                       )}
                     </div>
                     <div className="price text-base sm:text-lg">
-                      R$ {order.total}
+                      {formatCurrency(order.productsSubtotal + order.deliveryFee)}
                     </div>
+                    {order.deliveryFee > 0 && (
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                        Frete: {formatCurrency(order.deliveryFee)}
+                      </p>
+                    )}
                   </div>
                 </div>
 

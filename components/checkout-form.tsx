@@ -19,6 +19,13 @@ import {
   unmaskPhone,
 } from "@/lib/phone";
 import { storePixPaymentForOrder } from "@/lib/pix-payment";
+import { DeliveryRegionField } from "@/components/delivery-region-field";
+import { OrderTotalSummary } from "@/components/order-total-summary";
+import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
+import {
+  formatCurrency,
+  parseRegionPrice,
+} from "@/lib/delivery-regions";
 
 function resolveCreatedOrderId(data: {
   order_id?: string;
@@ -42,6 +49,8 @@ export function CheckoutForm() {
     useCart();
   const { user } = useUser();
   const router = useRouter();
+  const { regions, loading: loadingRegions, error: regionsError, getRegionByName } =
+    useDeliveryRegions();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
     {},
@@ -96,6 +105,34 @@ export function CheckoutForm() {
       });
     }
   }, [user]);
+
+  useEffect(() => {
+    if (loadingRegions || regions.length === 0 || !formData.district) {
+      return;
+    }
+
+    const matchedRegion = getRegionByName(formData.district);
+
+    if (matchedRegion && matchedRegion.name !== formData.district) {
+      setFormData((current) => ({
+        ...current,
+        district: matchedRegion.name,
+      }));
+      return;
+    }
+
+    if (!matchedRegion) {
+      setFormData((current) => ({
+        ...current,
+        district: "",
+      }));
+    }
+  }, [loadingRegions, regions, formData.district, getRegionByName]);
+
+  const productsSubtotal = getTotalPrice();
+  const selectedRegion = getRegionByName(formData.district);
+  const freight = selectedRegion ? parseRegionPrice(selectedRegion.price) : 0;
+  const orderTotal = productsSubtotal + freight;
 
   const fetchProductInfo = useCallback(
     async (
@@ -200,6 +237,13 @@ export function CheckoutForm() {
     });
   };
 
+  const handleRegionChange = (regionName: string) => {
+    setFormData((current) => ({
+      ...current,
+      district: regionName,
+    }));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -237,6 +281,11 @@ export function CheckoutForm() {
 
     if (!isValidBrazilianPhone(formData.phone)) {
       alert("Informe um telefone válido com DDD (10 ou 11 dígitos).");
+      return;
+    }
+
+    if (!selectedRegion) {
+      alert("Selecione uma região de entrega válida.");
       return;
     }
 
@@ -280,11 +329,12 @@ export function CheckoutForm() {
         user_id: user.id,
         payment_method: "pix",
         phone: unmaskPhone(formData.phone),
+        delivery_fee: freight,
         address: {
           street: formData.street,
           street_number: formData.street_number,
           address_details: formData.address_details || "",
-          district: formData.district,
+          district: selectedRegion.name,
           city: formData.city,
           state: formData.state,
           postal_code: formData.zipCode,
@@ -539,12 +589,11 @@ export function CheckoutForm() {
 
               <Separator className="my-3 sm:my-4" />
 
-              <div className="flex justify-between items-center text-lg sm:text-xl font-bold">
-                <span className="text-theme-primary">Total:</span>
-                <span className="price text-xl sm:text-2xl">
-                  R$ {getTotalPrice().toFixed(2).replace(".", ",")}
-                </span>
-              </div>
+              <OrderTotalSummary
+                productsSubtotal={productsSubtotal}
+                freight={freight}
+                selectedRegionName={selectedRegion?.name}
+              />
             </CardContent>
           </Card>
         </div>
@@ -605,19 +654,15 @@ export function CheckoutForm() {
                     </div>
                   </div>
 
-                  <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Bairro *
-                    </label>
-                    <Input
-                      name="district"
-                      value={formData.district}
-                      onChange={handleInputChange}
-                      required
-                      placeholder="Nome do bairro"
-                      className="focus:border-theme-accent text-sm sm:text-base"
-                    />
-                  </div>
+                  <DeliveryRegionField
+                    id="checkout-region"
+                    regions={regions}
+                    value={formData.district}
+                    onChange={handleRegionChange}
+                    loading={loadingRegions}
+                    error={regionsError}
+                    disabled={isSubmitting}
+                  />
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     <div>
@@ -679,6 +724,15 @@ export function CheckoutForm() {
                     />
                   </div>
 
+                  <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 space-y-3">
+                    <OrderTotalSummary
+                      productsSubtotal={productsSubtotal}
+                      freight={freight}
+                      selectedRegionName={selectedRegion?.name}
+                      compact
+                    />
+                  </div>
+
                   <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
                     <p className="text-xs sm:text-sm font-medium text-theme-primary">
                       Pagamento via PIX
@@ -691,14 +745,12 @@ export function CheckoutForm() {
 
                   <Button
                     type="submit"
-                    disabled={isSubmitting}
+                    disabled={isSubmitting || loadingRegions || !selectedRegion}
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >
                     {isSubmitting
                       ? "Processando..."
-                      : `Finalizar Compra - R$ ${getTotalPrice()
-                          .toFixed(2)
-                          .replace(".", ",")} (${items.length} produtos)`}
+                      : `Finalizar Compra - ${formatCurrency(orderTotal)} (${items.length} produtos)`}
                   </Button>
                 </form>
               </CardContent>
