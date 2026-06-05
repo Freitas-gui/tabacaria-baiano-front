@@ -1,10 +1,17 @@
+import { resolveCdnUrl } from "@/lib/cdn";
+
+function pushResolved(out: string[], value: string) {
+  const resolved = resolveCdnUrl(value);
+  if (resolved) out.push(resolved);
+}
+
 export function extractProductImageUrls(p: Record<string, unknown>): string[] {
   const out: string[] = [];
   const pushFromArray = (arr: unknown) => {
     if (!Array.isArray(arr)) return;
     for (const it of arr) {
       if (typeof it === "string" && it) {
-        out.push(it);
+        pushResolved(out, it);
         continue;
       }
       if (
@@ -12,7 +19,7 @@ export function extractProductImageUrls(p: Record<string, unknown>): string[] {
         typeof it === "object" &&
         typeof (it as { url?: string }).url === "string"
       ) {
-        out.push((it as { url: string }).url);
+        pushResolved(out, (it as { url: string }).url);
       }
     }
   };
@@ -26,10 +33,12 @@ export function extractProductImageUrls(p: Record<string, unknown>): string[] {
   }
 
   if (typeof p.image === "string" && p.image) {
-    return [p.image];
+    const resolved = resolveCdnUrl(p.image);
+    return resolved ? [resolved] : [];
   }
   if (typeof p.images === "string" && p.images) {
-    return [p.images];
+    const resolved = resolveCdnUrl(p.images);
+    return resolved ? [resolved] : [];
   }
 
   return [];

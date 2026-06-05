@@ -13,6 +13,7 @@ import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
+import { resolveCdnUrl } from "@/lib/cdn";
 import {
   formatBrazilianPhone,
   isValidBrazilianPhone,
@@ -457,7 +458,8 @@ export function CheckoutForm() {
                       <div className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden">
                         <Image
                           src={
-                            item.image || "/placeholder.svg?height=80&width=80"
+                            resolveCdnUrl(item.image) ||
+                            "/placeholder.svg?height=80&width=80"
                           }
                           alt={item.name}
                           width={80}

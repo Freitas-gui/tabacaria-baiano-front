@@ -245,11 +245,19 @@ const HeaderContent = () => {
                 </Button>
                 <div className="absolute top-full right-0 mt-2 w-48 bg-card text-card-foreground border border-border rounded-md shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-200 z-50">
                   <button
+                    type="button"
+                    onClick={() => router.push("/conta")}
+                    className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted rounded-t-md"
+                  >
+                    Minha conta
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => {
                       logout();
                       router.push("/");
                     }}
-                    className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted rounded-md"
+                    className="w-full text-left px-4 py-2 text-sm text-foreground hover:bg-muted rounded-b-md"
                   >
                     Sair
                   </button>

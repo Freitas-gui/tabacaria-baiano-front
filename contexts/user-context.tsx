@@ -1,7 +1,8 @@
 "use client"
 
-import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import { API_BASE_URL } from "@/lib/api"
+import { parseUserFromApi, type ProfileUpdatePayload } from "@/lib/user-api"
 
 export interface Address {
   id: string
@@ -32,6 +33,8 @@ interface UserContextType {
   user: User | null
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  refreshUser: () => Promise<void>
+  updateProfile: (payload: ProfileUpdatePayload) => Promise<void>
   isLoading: boolean
 }
 
@@ -74,35 +77,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
       }
 
       const userDataFromAPI = data.data?.user
-      
+
       if (!userDataFromAPI) {
         throw new Error("Invalid response: user data not found")
       }
-      
-      const userData: User = {
-        id: userDataFromAPI.id || "",
-        name: userDataFromAPI.name || "",
-        email: userDataFromAPI.email || email,
-        phone: userDataFromAPI.phone || "",
-        accessToken: data.data?.access_token || "",
-        address: userDataFromAPI.address ? {
-          id: userDataFromAPI.address.id || "",
-          name: userDataFromAPI.address.name || "",
-          street: userDataFromAPI.address.street || "",
-          street_number: userDataFromAPI.address.street_number || "",
-          postal_code: userDataFromAPI.address.postal_code || "",
-          district: userDataFromAPI.address.district || "",
-          city: userDataFromAPI.address.city || "",
-          state: userDataFromAPI.address.state || "",
-          country: userDataFromAPI.address.country || "",
-          address_details: userDataFromAPI.address.address_details,
-          latitude: userDataFromAPI.address.latitude,
-          longitude: userDataFromAPI.address.longitude,
-          is_default_address: userDataFromAPI.address.is_default_address || false,
-        } : undefined,
-      }
 
-      console.log("Parsed user data:", userData)
+      const userData = parseUserFromApi(
+        userDataFromAPI,
+        data.data?.access_token || "",
+      )
+
       setUser(userData)
       localStorage.setItem("user", JSON.stringify(userData))
       console.log("User saved to localStorage")
@@ -119,12 +103,79 @@ export function UserProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("user")
   }
 
+  const persistUser = useCallback((userData: User) => {
+    setUser(userData)
+    localStorage.setItem("user", JSON.stringify(userData))
+  }, [])
+
+  const refreshUser = useCallback(async () => {
+    const storedUser = localStorage.getItem("user")
+    if (!storedUser) {
+      throw new Error("Usuário não autenticado")
+    }
+
+    const parsed = JSON.parse(storedUser) as User
+    if (!parsed.accessToken) {
+      throw new Error("Usuário não autenticado")
+    }
+
+    const response = await fetch(`${API_BASE_URL}/api/customer/me`, {
+      headers: {
+        Authorization: `Bearer ${parsed.accessToken}`,
+      },
+    })
+
+    const data = await response.json()
+
+    if (!response.ok) {
+      throw new Error(data.message || "Não foi possível carregar o perfil")
+    }
+
+    const userData = parseUserFromApi(data.data, parsed.accessToken)
+    persistUser(userData)
+  }, [persistUser])
+
+  const updateProfile = useCallback(
+    async (payload: ProfileUpdatePayload) => {
+      const storedUser = localStorage.getItem("user")
+      if (!storedUser) {
+        throw new Error("Usuário não autenticado")
+      }
+
+      const parsed = JSON.parse(storedUser) as User
+      if (!parsed.accessToken) {
+        throw new Error("Usuário não autenticado")
+      }
+
+      const response = await fetch(`${API_BASE_URL}/api/customer/me`, {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${parsed.accessToken}`,
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || "Não foi possível atualizar o perfil")
+      }
+
+      const userData = parseUserFromApi(data.data, parsed.accessToken)
+      persistUser(userData)
+    },
+    [persistUser],
+  )
+
   return (
     <UserContext.Provider
       value={{
         user,
         login,
         logout,
+        refreshUser,
+        updateProfile,
         isLoading,
       }}
     >

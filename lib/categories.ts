@@ -1,3 +1,5 @@
+import { resolveCdnUrl } from "@/lib/cdn";
+
 export type CategoryLeaf = {
   id: string;
   name: string;
@@ -21,7 +23,7 @@ function mapLeaf(raw: unknown, parentId: string): CategoryLeaf | null {
   return {
     id,
     name,
-    image: typeof o.image === "string" ? o.image : null,
+    image: typeof o.image === "string" ? resolveCdnUrl(o.image) || null : null,
     parentId,
   };
 }
@@ -42,7 +44,7 @@ export function normalizeCategoryParents(data: unknown): CategoryParent[] {
       return {
         id,
         name,
-        image: typeof c.image === "string" ? c.image : null,
+        image: typeof c.image === "string" ? resolveCdnUrl(c.image) || null : null,
         children,
       };
     })

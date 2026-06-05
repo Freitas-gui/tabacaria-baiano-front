@@ -6,6 +6,7 @@ import { Card } from "@/components/ui/card";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
+import { resolveCdnUrl } from "@/lib/cdn";
 import { extractProductImageUrls } from "@/lib/product-images";
 import { getProductPath } from "@/lib/product-slug";
 import { ProductImageFrame } from "@/components/product-image-frame";
@@ -139,7 +140,10 @@ export function ProductDetail({ slug }: { slug: string }) {
           : null;
 
     const images = Array.isArray(data.images)
-      ? data.images.map((image) => String(image))
+      ? data.images
+          .map((image) => String(image))
+          .map((image) => resolveCdnUrl(image))
+          .filter(Boolean)
       : [];
 
     setProduct((prev) => ({

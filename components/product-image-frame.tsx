@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { resolveCdnUrl } from "@/lib/cdn";
 import { cn } from "@/lib/utils";
 
 type ProductImageFrameProps = {
@@ -48,6 +49,7 @@ export function ProductImageFrame({
   onClick,
 }: ProductImageFrameProps) {
   const config = variantConfig[variant];
+  const imageSrc = resolveCdnUrl(src) || "/placeholder.svg";
 
   return (
     <div
@@ -61,7 +63,7 @@ export function ProductImageFrame({
     >
       <div className={cn("absolute", config.inset)}>
         <Image
-          src={src || "/placeholder.svg"}
+          src={imageSrc}
           alt={alt}
           fill
           sizes={config.sizes}

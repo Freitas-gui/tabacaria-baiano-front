@@ -8,6 +8,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useCart } from "@/contexts/cart-context";
 import { API_BASE_URL } from "@/lib/api";
+import { resolveCdnUrl } from "@/lib/cdn";
 import { extractProductImageUrls } from "@/lib/product-images";
 import type { CategoryParent } from "@/lib/categories";
 import {
@@ -465,7 +466,7 @@ export function HomepageContent() {
               >
                 <div className="relative mb-2 aspect-square flex-shrink-0 overflow-hidden rounded-md bg-muted sm:mb-4">
                   <Image
-                    src={product.image || "/images/products/"}
+                    src={resolveCdnUrl(product.image) || "/images/products/"}
                     alt={product.name}
                     fill
                     sizes="(max-width: 640px) 50vw, (max-width: 768px) 33vw, (max-width: 1024px) 25vw, 20vw"
@@ -494,7 +495,7 @@ export function HomepageContent() {
                     onClick={() => handleProductClick(product)}
                     className="h-9 min-w-0 flex-1 truncate px-1.5 text-[10px] btn-theme-primary button-hover sm:h-10 sm:px-3 sm:text-sm"
                   >
-                    DETALHES
+                    COMPRAR
                   </Button>
                   <Button
                     onClick={async () => {
@@ -531,7 +532,8 @@ export function HomepageContent() {
                         id: `${product.id}-${Date.now()}`,
                         name: product.name,
                         price: product.price ?? "0",
-                        image: product.image ?? "/images/products/",
+                        image:
+                          resolveCdnUrl(product.image) || "/images/products/",
                         pharmacyProductId: product.pharmacyProductId || null,
                         stock: resolvedStock,
                         variationOptionId: null,

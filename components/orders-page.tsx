@@ -18,6 +18,7 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import { API_BASE_URL } from "@/lib/api";
+import { resolveCdnUrl } from "@/lib/cdn";
 import { PixPaymentPanel } from "@/components/pix-payment-panel";
 import type { PixPaymentPayload } from "@/lib/pix-payment";
 import {
@@ -76,7 +77,7 @@ function mapApiOrder(order: any): Order {
       price: product.price || "0",
       quantity: product.amount || 0,
       image:
-        product.product?.images?.[0] ||
+        resolveCdnUrl(product.product?.images?.[0]) ||
         "/placeholder.svg?height=80&width=80",
       pharmacyName: product.pharmacy?.name || order.pharmacy?.name || null,
       variationOption: product.variationOption
@@ -424,7 +425,7 @@ export function OrdersPage() {
                       <div className="flex items-center space-x-4">
                         <div className="flex-shrink-0 aspect-square bg-muted rounded overflow-hidden border border-border">
                           <Image
-                            src={item.image || "/placeholder.svg"}
+                            src={resolveCdnUrl(item.image) || "/placeholder.svg"}
                             alt={item.name}
                             width={80}
                             height={80}
@@ -674,7 +675,7 @@ export function OrdersPage() {
                       className="flex items-center space-x-2 flex-shrink-0"
                     >
                       <Image
-                        src={item.image || "/placeholder.svg"}
+                        src={resolveCdnUrl(item.image) || "/placeholder.svg"}
                         alt={item.name}
                         width={40}
                         height={40}

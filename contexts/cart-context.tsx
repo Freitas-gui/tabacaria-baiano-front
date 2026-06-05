@@ -1,6 +1,7 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
+import { resolveCdnUrl } from "@/lib/cdn"
 
 interface CartItem {
   id: string
@@ -74,7 +75,9 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems((currentItems) => {
       const itemWithValidImage = {
         ...newItem,
-        image: newItem.image || "/placeholder.svg?height=200&width=200",
+        image:
+          resolveCdnUrl(newItem.image) ||
+          "/placeholder.svg?height=200&width=200",
         quantity: 1,
       }
 
