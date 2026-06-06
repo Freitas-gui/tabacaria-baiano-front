@@ -2,6 +2,7 @@
 
 import type React from "react";
 import { Suspense } from "react";
+import Image from "next/image";
 import { ChevronDown, Search, ShoppingCart, User, X, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,10 +21,14 @@ export function Header() {
         <header className="sticky top-0 z-50 bg-theme-header text-[var(--text-primary)] shadow-sm">
           <div className="container mx-auto px-4 py-3">
             <div className="flex items-center justify-between">
-              <div className="text-2xl font-bold text-[var(--text-primary)]">
-                <span>Tabacaria</span>
-                <div className="text-sm font-normal">do Baiano</div>
-              </div>
+              <Image
+                src="/logo-princial.png"
+                alt="Tabacaria do Baiano"
+                width={80}
+                height={80}
+                className="h-16 w-16 sm:h-20 sm:w-20"
+                priority
+              />
               <div className="text-sm">Carregando...</div>
             </div>
           </div>
@@ -187,13 +192,20 @@ const HeaderContent = () => {
       <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3">
         <div className="flex items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center flex-shrink-0">
-            <div
-              className="text-xl sm:text-2xl font-bold cursor-pointer"
+            <button
+              type="button"
+              className="cursor-pointer"
               onClick={handleLogoClick}
             >
-              <span className="text-[var(--text-primary)]">Tabacaria</span>
-              <div className="text-xs sm:text-sm font-normal">do Baiano</div>
-            </div>
+              <Image
+                src="/logo-princial.png"
+                alt="Tabacaria do Baiano"
+                width={80}
+                height={80}
+                className="h-16 w-16 sm:h-20 sm:w-20"
+                priority
+              />
+            </button>
           </div>
 
           <div className="hidden md:flex flex-1 max-w-md mx-4 lg:mx-8">

@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { Instagram, Linkedin, MapPin, MessageCircle } from "lucide-react";
 import { PolicyDialog } from "@/components/policy-dialog";
 import { DEVELOPER_CREDIT } from "@/lib/developer-credit";
@@ -29,10 +31,15 @@ export function Footer() {
         <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div>
-              <div className="text-2xl font-bold text-[color:var(--footer-muted)] mb-3">
-                <span>Tabacaria</span>
-                <div className="text-sm font-normal opacity-90">do Baiano</div>
-              </div>
+              <Link href="/" className="inline-block mb-3">
+                <Image
+                  src="/logo-2-transparent.png"
+                  alt="Tabacaria do Baiano"
+                  width={240}
+                  height={160}
+                  className="h-auto w-full max-w-[200px] sm:max-w-[240px]"
+                />
+              </Link>
               <p className="text-sm opacity-90 mb-2">{STORE_INFO.tagline}</p>
               <p className="text-sm opacity-90 flex items-start gap-1.5">
                 <MapPin className="h-4 w-4 shrink-0 mt-0.5 text-[color:var(--footer-muted)]" />
