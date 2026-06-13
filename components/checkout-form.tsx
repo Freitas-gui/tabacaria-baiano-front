@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { Minus, Plus, Trash2, MapPin, Loader2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
@@ -20,13 +20,13 @@ import {
   unmaskPhone,
 } from "@/lib/phone";
 import { storePixPaymentForOrder } from "@/lib/pix-payment";
-import { DeliveryRegionField } from "@/components/delivery-region-field";
 import { OrderTotalSummary } from "@/components/order-total-summary";
-import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
-import {
-  formatCurrency,
-  parseRegionPrice,
-} from "@/lib/delivery-regions";
+import { useShippingQuote } from "@/hooks/use-shipping-quote";
+import { useAddressAutocomplete } from "@/hooks/use-address-autocomplete";
+import { formatCurrency } from "@/lib/delivery-regions";
+import { lookupCep, formatCep } from "@/lib/cep-api";
+import { fetchAddressDetails, type PlaceSuggestion } from "@/lib/address-api";
+import type { AddressSuggestion } from "@/lib/shipping-api";
 
 function resolveCreatedOrderId(data: {
   order_id?: string;
@@ -45,14 +45,113 @@ function resolveCreatedOrderId(data: {
   return null;
 }
 
+function ShippingStatus({
+  state,
+  quoteExpired,
+  onRefresh,
+}: {
+  state: ReturnType<typeof useShippingQuote>["state"];
+  quoteExpired: boolean;
+  onRefresh: () => void;
+}) {
+  if (state.status === "idle" || state.status === "needs_selection") return null;
+
+  if (state.status === "loading") {
+    return (
+      <p className="text-xs text-muted-foreground animate-pulse">
+        Calculando frete...
+      </p>
+    );
+  }
+
+  if (state.status === "unavailable") {
+    return (
+      <p className="text-xs text-red-600">{state.message}</p>
+    );
+  }
+
+  if (state.status === "error") {
+    return (
+      <p className="text-xs text-amber-700">
+        Não foi possível calcular o frete. Tente novamente.
+      </p>
+    );
+  }
+
+  if (state.status === "ready" && quoteExpired) {
+    return (
+      <div className="flex items-center gap-2">
+        <p className="text-xs text-amber-700">Cotação expirada.</p>
+        <button
+          type="button"
+          onClick={onRefresh}
+          className="text-xs underline text-theme-primary"
+        >
+          Recalcular
+        </button>
+      </div>
+    );
+  }
+
+  if (state.status === "ready") {
+    const eta = state.quote.estimated_dropoff_at
+      ? new Date(state.quote.estimated_dropoff_at).toLocaleTimeString("pt-BR", {
+          hour: "2-digit",
+          minute: "2-digit",
+        })
+      : null;
+
+    return (
+      <p className="text-xs text-emerald-700">
+        Frete: {formatCurrency(state.quote.fee)}
+        {eta ? ` · Previsão: ${eta}` : ""}
+      </p>
+    );
+  }
+
+  return null;
+}
+
+function AddressSuggestionPicker({
+  message,
+  suggestions,
+  onSelect,
+}: {
+  message: string;
+  suggestions: AddressSuggestion[];
+  onSelect: (suggestion: AddressSuggestion) => void;
+}) {
+  return (
+    <div className="rounded-md border border-amber-300 bg-amber-50 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <MapPin className="w-4 h-4 text-amber-600 flex-shrink-0" />
+        <p className="text-xs font-medium text-amber-800">{message}</p>
+      </div>
+      <p className="text-xs text-amber-700">Selecione um endereço sugerido:</p>
+      <ul className="space-y-1">
+        {suggestions.map((s, i) => (
+          <li key={i}>
+            <button
+              type="button"
+              onClick={() => onSelect(s)}
+              className="w-full text-left text-xs px-3 py-2 rounded border border-amber-200 bg-white hover:bg-amber-100 transition-colors text-amber-900"
+            >
+              {s.address}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 export function CheckoutForm() {
   const { items, updateQuantity, removeFromCart, getTotalPrice, clearCart } =
     useCart();
   const { user } = useUser();
   const router = useRouter();
-  const { regions, loading: loadingRegions, error: regionsError, getRegionByName } =
-    useDeliveryRegions();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [cepLoading, setCepLoading] = useState(false);
   const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
     {},
   );
@@ -107,33 +206,34 @@ export function CheckoutForm() {
     }
   }, [user]);
 
-  useEffect(() => {
-    if (loadingRegions || regions.length === 0 || !formData.district) {
-      return;
-    }
-
-    const matchedRegion = getRegionByName(formData.district);
-
-    if (matchedRegion && matchedRegion.name !== formData.district) {
-      setFormData((current) => ({
-        ...current,
-        district: matchedRegion.name,
-      }));
-      return;
-    }
-
-    if (!matchedRegion) {
-      setFormData((current) => ({
-        ...current,
-        district: "",
-      }));
-    }
-  }, [loadingRegions, regions, formData.district, getRegionByName]);
-
   const productsSubtotal = getTotalPrice();
-  const selectedRegion = getRegionByName(formData.district);
-  const freight = selectedRegion ? parseRegionPrice(selectedRegion.price) : 0;
+
+  const { state: shippingState, quoteExpired, refresh: refreshQuote } = useShippingQuote(
+    {
+      street: formData.street,
+      number: formData.street_number,
+      district: formData.district,
+      city: formData.city,
+      state: formData.state,
+      postal_code: formData.zipCode,
+      complement: formData.address_details || undefined,
+      cart_subtotal_cents: Math.round(productsSubtotal * 100),
+    },
+    !!user,
+  );
+
+  const freight =
+    shippingState.status === "ready" && !quoteExpired
+      ? shippingState.quote.fee
+      : 0;
+
   const orderTotal = productsSubtotal + freight;
+
+  const canSubmit =
+    shippingState.status === "ready" &&
+    !quoteExpired &&
+    !isSubmitting &&
+    !cepLoading;
 
   const fetchProductInfo = useCallback(
     async (
@@ -238,11 +338,111 @@ export function CheckoutForm() {
     });
   };
 
-  const handleRegionChange = (regionName: string) => {
-    setFormData((current) => ({
-      ...current,
-      district: regionName,
-    }));
+  const [addressQuery, setAddressQuery] = useState("");
+  const [addressSessionToken, setAddressSessionToken] = useState<string | null>(null);
+  const [addressDetailsLoading, setAddressDetailsLoading] = useState(false);
+  const [addressDetailsError, setAddressDetailsError] = useState<string | null>(null);
+
+  const {
+    suggestions: addressSuggestions,
+    loading: addressSuggestionsLoading,
+    error: addressSuggestionsError,
+    clearSuggestions: clearAddressSuggestions,
+  } = useAddressAutocomplete(addressQuery, addressSessionToken);
+
+  const cepDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleZipCodeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const formatted = formatCep(e.target.value);
+    setFormData((prev) => ({ ...prev, zipCode: formatted }));
+
+    const digits = formatted.replace(/\D/g, "");
+    if (digits.length === 8) {
+      if (cepDebounceRef.current) clearTimeout(cepDebounceRef.current);
+      cepDebounceRef.current = setTimeout(async () => {
+        setCepLoading(true);
+        const data = await lookupCep(digits);
+        setCepLoading(false);
+        if (data) {
+          setFormData((prev) => ({
+            ...prev,
+            ...(data.logradouro ? { street: data.logradouro } : {}),
+            district: data.bairro || prev.district,
+            city: data.localidade || prev.city,
+            state: data.uf || prev.state,
+          }));
+        }
+      }, 400);
+    }
+  };
+
+  const handleAddressQueryChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value;
+    setAddressQuery(value);
+    setAddressDetailsError(null);
+
+    if (value.trim().length === 0) {
+      setAddressSessionToken(null);
+      clearAddressSuggestions();
+      return;
+    }
+
+    if (!addressSessionToken) {
+      setAddressSessionToken(crypto.randomUUID());
+    }
+  };
+
+  const handleSelectAddressPlace = async (place: PlaceSuggestion) => {
+    setAddressQuery(place.description);
+    clearAddressSuggestions();
+    setAddressDetailsError(null);
+    setAddressDetailsLoading(true);
+
+    try {
+      const details = await fetchAddressDetails(
+        place.place_id,
+        addressSessionToken ?? undefined,
+      );
+
+      setFormData((prev) => ({
+        ...prev,
+        ...(details.street ? { street: details.street } : {}),
+        ...(details.number ? { street_number: details.number } : {}),
+        ...(details.district ? { district: details.district } : {}),
+        ...(details.city ? { city: details.city } : {}),
+        ...(details.state ? { state: details.state } : {}),
+        ...(details.postal_code
+          ? { zipCode: formatCep(details.postal_code) }
+          : {}),
+      }));
+    } catch (err) {
+      setAddressDetailsError(
+        err instanceof Error
+          ? err.message
+          : "Erro ao buscar detalhes do endereço",
+      );
+    } finally {
+      setAddressDetailsLoading(false);
+      setAddressSessionToken(null);
+    }
+  };
+
+  const handleSelectAddressSuggestion = (suggestion: AddressSuggestion) => {
+    const d = suggestion.detailed_address;
+    if (d) {
+      const streetMatch = d.street_address?.match(/^(.+?),\s*(\d+\S*)$/);
+      setFormData((prev) => ({
+        ...prev,
+        ...(streetMatch
+          ? { street: streetMatch[1].trim(), street_number: streetMatch[2] }
+          : d.street_address
+          ? { street: d.street_address }
+          : {}),
+        city: d.city || prev.city,
+        state: d.state || prev.state,
+        ...(d.zip_code ? { zipCode: formatCep(d.zip_code) } : {}),
+      }));
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -250,6 +450,11 @@ export function CheckoutForm() {
 
     if (!user || !user.accessToken) {
       alert("Erro: usuário não autenticado");
+      return;
+    }
+
+    if (shippingState.status !== "ready" || quoteExpired) {
+      alert("Solicite uma cotação de frete válida antes de finalizar.");
       return;
     }
 
@@ -282,11 +487,6 @@ export function CheckoutForm() {
 
     if (!isValidBrazilianPhone(formData.phone)) {
       alert("Informe um telefone válido com DDD (10 ou 11 dígitos).");
-      return;
-    }
-
-    if (!selectedRegion) {
-      alert("Selecione uma região de entrega válida.");
       return;
     }
 
@@ -330,12 +530,12 @@ export function CheckoutForm() {
         user_id: user.id,
         payment_method: "pix",
         phone: unmaskPhone(formData.phone),
-        delivery_fee: freight,
+        delivery_quote_id: shippingState.quote.quote_id,
         address: {
           street: formData.street,
           street_number: formData.street_number,
           address_details: formData.address_details || "",
-          district: selectedRegion.name,
+          district: formData.district,
           city: formData.city,
           state: formData.state,
           postal_code: formData.zipCode,
@@ -356,6 +556,20 @@ export function CheckoutForm() {
 
       if (!response.ok) {
         let errorMessage = "Erro ao criar pedido";
+
+        const quoteError =
+          data?.errors?.delivery_quote_id?.[0] ||
+          (typeof data?.errors === "object" && data?.errors !== null
+            ? Object.values(data.errors as Record<string, string[]>)
+                .flat()
+                .find((e: string) => e.toLowerCase().includes("cotação"))
+            : null);
+
+        if (quoteError) {
+          alert(`Cotação de frete inválida: ${quoteError}\nSolicite uma nova cotação.`);
+          setIsSubmitting(false);
+          return;
+        }
 
         if (data.errors && Array.isArray(data.errors)) {
           const stockErrors = data.errors.filter((err: string) =>
@@ -594,7 +808,7 @@ export function CheckoutForm() {
               <OrderTotalSummary
                 productsSubtotal={productsSubtotal}
                 freight={freight}
-                selectedRegionName={selectedRegion?.name}
+                shippingState={shippingState}
               />
             </CardContent>
           </Card>
@@ -614,6 +828,58 @@ export function CheckoutForm() {
                   onSubmit={handleSubmit}
                   className="space-y-3 sm:space-y-4 mt-2 sm:mt-4"
                 >
+                  <div className="relative">
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Buscar endereço
+                    </label>
+                    <div className="relative">
+                      <Input
+                        value={addressQuery}
+                        onChange={handleAddressQueryChange}
+                        placeholder="Digite o endereço de entrega"
+                        autoComplete="off"
+                        className="focus:border-theme-accent text-sm sm:text-base pr-8"
+                      />
+                      {(addressSuggestionsLoading || addressDetailsLoading) && (
+                        <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                      )}
+                    </div>
+                    {addressSuggestionsError && (
+                      <p className="text-xs text-red-600 mt-1">
+                        {addressSuggestionsError}
+                      </p>
+                    )}
+                    {addressDetailsError && (
+                      <p className="text-xs text-red-600 mt-1">
+                        {addressDetailsError}
+                      </p>
+                    )}
+                    {addressSuggestions.length > 0 && (
+                      <ul className="absolute z-10 mt-1 w-full rounded-md border border-border bg-background shadow-md max-h-60 overflow-auto">
+                        {addressSuggestions.map((suggestion) => (
+                          <li key={suggestion.place_id}>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectAddressPlace(suggestion)}
+                              className="w-full text-left px-3 py-2 text-xs sm:text-sm hover:bg-muted transition-colors"
+                            >
+                              <span className="block font-medium text-theme-primary">
+                                {suggestion.main_text}
+                              </span>
+                              <span className="block text-xs text-muted-foreground">
+                                {suggestion.secondary_text}
+                              </span>
+                            </button>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Selecione um endereço da lista para preencher os campos
+                      automaticamente.
+                    </p>
+                  </div>
+
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                       Rua *
@@ -656,15 +922,19 @@ export function CheckoutForm() {
                     </div>
                   </div>
 
-                  <DeliveryRegionField
-                    id="checkout-region"
-                    regions={regions}
-                    value={formData.district}
-                    onChange={handleRegionChange}
-                    loading={loadingRegions}
-                    error={regionsError}
-                    disabled={isSubmitting}
-                  />
+                  <div>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Bairro *
+                    </label>
+                    <Input
+                      name="district"
+                      value={formData.district}
+                      onChange={handleInputChange}
+                      required
+                      placeholder="Bairro"
+                      className="focus:border-theme-accent text-sm sm:text-base"
+                    />
+                  </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                     <div>
@@ -698,14 +968,21 @@ export function CheckoutForm() {
                       <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                         CEP *
                       </label>
-                      <Input
-                        name="zipCode"
-                        value={formData.zipCode}
-                        onChange={handleInputChange}
-                        required
-                        placeholder="00000-000"
-                        className="focus:border-theme-accent text-sm sm:text-base"
-                      />
+                      <div className="relative">
+                        <Input
+                          name="zipCode"
+                          value={formData.zipCode}
+                          onChange={handleZipCodeChange}
+                          required
+                          placeholder="00000-000"
+                          inputMode="numeric"
+                          maxLength={9}
+                          className="focus:border-theme-accent text-sm sm:text-base pr-8"
+                        />
+                        {cepLoading && (
+                          <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 w-4 h-4 animate-spin text-muted-foreground" />
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -726,12 +1003,25 @@ export function CheckoutForm() {
                     />
                   </div>
 
+                  {shippingState.status === "needs_selection" && (
+                    <AddressSuggestionPicker
+                      message={shippingState.message}
+                      suggestions={shippingState.suggestions}
+                      onSelect={handleSelectAddressSuggestion}
+                    />
+                  )}
+
                   <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 space-y-3">
                     <OrderTotalSummary
                       productsSubtotal={productsSubtotal}
                       freight={freight}
-                      selectedRegionName={selectedRegion?.name}
+                      shippingState={shippingState}
                       compact
+                    />
+                    <ShippingStatus
+                      state={shippingState}
+                      quoteExpired={quoteExpired}
+                      onRefresh={refreshQuote}
                     />
                   </div>
 
@@ -747,11 +1037,15 @@ export function CheckoutForm() {
 
                   <Button
                     type="submit"
-                    disabled={isSubmitting || loadingRegions || !selectedRegion}
+                    disabled={!canSubmit}
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >
                     {isSubmitting
                       ? "Processando..."
+                      : shippingState.status === "loading"
+                      ? "Calculando frete..."
+                      : shippingState.status !== "ready" || quoteExpired
+                      ? "Preencha o endereço para calcular o frete"
                       : `Finalizar Compra - ${formatCurrency(orderTotal)} (${items.length} produtos)`}
                   </Button>
                 </form>

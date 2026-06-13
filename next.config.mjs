@@ -13,6 +13,11 @@ const nextConfig = {
         hostname: 'd2abfyoj6wwhix.cloudfront.net',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'tabacaria-baiano.s3.us-east-2.amazonaws.com',
+        pathname: '/**',
+      },
     ],
     dangerouslyAllowSVG: true,
     contentDispositionType: 'attachment',

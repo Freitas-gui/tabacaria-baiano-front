@@ -67,6 +67,9 @@ interface Order {
   paymentProvider?: string | null;
   pixPayment?: PixPaymentPayload | null;
   estimatedDelivery?: string;
+  courierProvider?: string | null;
+  courierStatus?: string | null;
+  courierTrackingUrl?: string | null;
 }
 
 function mapApiOrder(order: any): Order {
@@ -130,7 +133,26 @@ function mapApiOrder(order: any): Order {
     paymentStatus: order.payment_status ?? null,
     paymentProvider: order.payment_provider ?? null,
     pixPayment,
+    courierProvider: order.courier_provider ?? null,
+    courierStatus: order.courier_status ?? null,
+    courierTrackingUrl: order.courier_tracking_url ?? null,
   };
+}
+
+function courierStatusLabel(status: string | null | undefined): string | null {
+  if (!status) return null;
+  const map: Record<string, string> = {
+    pending: "Aguardando coleta",
+    EN_ROUTE_TO_PICKUP: "Motoboy a caminho",
+    ARRIVED_AT_PICKUP: "Motoboy chegou",
+    EN_ROUTE_TO_DROPOFF: "A caminho",
+    ARRIVED_AT_DROPOFF: "Chegou ao destino",
+    COMPLETED: "Entregue",
+    CANCELED: "Cancelado",
+    FAILED: "Falhou",
+    RETURNED: "Devolvido",
+  };
+  return map[status] ?? status;
 }
 
 function mapStatus(status: string): Order["status"] {
@@ -471,7 +493,11 @@ export function OrdersPage() {
                 <OrderTotalSummary
                   productsSubtotal={selectedOrder.productsSubtotal}
                   freight={selectedOrder.deliveryFee}
-                  selectedRegionName={selectedOrder.deliveryRegion ?? undefined}
+                  selectedRegionName={
+                    selectedOrder.courierProvider === "uber_direct"
+                      ? "Uber Direct"
+                      : (selectedOrder.deliveryRegion ?? undefined)
+                  }
                 />
               </CardContent>
             </Card>
@@ -480,7 +506,7 @@ export function OrdersPage() {
           {/* Order Info Sidebar */}
           <div className="space-y-6">
             {/* Delivery Status */}
-            {selectedOrder.estimatedDelivery && (
+            {(selectedOrder.estimatedDelivery || selectedOrder.courierProvider === "uber_direct") && (
               <Card className="card-static">
                 <CardHeader>
                   <CardTitle className="text-theme-primary flex items-center">
@@ -490,12 +516,41 @@ export function OrdersPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-3">
-                    <div className="flex items-center space-x-2">
-                      <Clock className="w-4 h-4 text-theme-secondary" />
-                      <span className="text-sm">
-                        {selectedOrder.estimatedDelivery}
-                      </span>
-                    </div>
+                    {selectedOrder.courierProvider === "uber_direct" && (
+                      <>
+                        <div className="flex items-center space-x-2">
+                          <Truck className="w-4 h-4 text-theme-secondary" />
+                          <span className="text-sm font-medium">Uber Direct</span>
+                        </div>
+                        {selectedOrder.courierStatus && (
+                          <div className="flex items-center space-x-2">
+                            <Clock className="w-4 h-4 text-theme-secondary" />
+                            <span className="text-sm">
+                              {courierStatusLabel(selectedOrder.courierStatus)}
+                            </span>
+                          </div>
+                        )}
+                        {selectedOrder.courierTrackingUrl && (
+                          <a
+                            href={selectedOrder.courierTrackingUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1 text-sm text-theme-primary underline"
+                          >
+                            <MapPin className="w-4 h-4" />
+                            Rastrear entrega
+                          </a>
+                        )}
+                      </>
+                    )}
+                    {selectedOrder.estimatedDelivery && (
+                      <div className="flex items-center space-x-2">
+                        <Clock className="w-4 h-4 text-theme-secondary" />
+                        <span className="text-sm">
+                          {selectedOrder.estimatedDelivery}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex items-start space-x-2">
                       <MapPin className="w-4 h-4 text-theme-secondary mt-0.5" />
                       <span className="text-sm">
