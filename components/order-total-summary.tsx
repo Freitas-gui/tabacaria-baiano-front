@@ -8,6 +8,9 @@ type OrderTotalSummaryProps = {
   freight: number;
   selectedRegionName?: string;
   compact?: boolean;
+  discountAmount?: number;
+  discountCode?: string | null;
+  freeShipping?: boolean;
 };
 
 export function OrderTotalSummary({
@@ -15,8 +18,12 @@ export function OrderTotalSummary({
   freight,
   selectedRegionName,
   compact = false,
+  discountAmount = 0,
+  discountCode,
+  freeShipping = false,
 }: OrderTotalSummaryProps) {
-  const total = productsSubtotal + freight;
+  const effectiveFreight = freeShipping ? 0 : freight;
+  const total = Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
 
   return (
     <div className={compact ? "space-y-2" : "space-y-3"}>
@@ -32,9 +39,30 @@ export function OrderTotalSummary({
           {selectedRegionName ? ` (${selectedRegionName})` : ""}
         </span>
         <span className="font-medium text-theme-primary">
-          {freight > 0 ? formatCurrency(freight) : "—"}
+          {freeShipping && freight > 0 ? (
+            <>
+              <span className="line-through text-muted-foreground mr-1">
+                {formatCurrency(freight)}
+              </span>
+              Grátis
+            </>
+          ) : freight > 0 ? (
+            formatCurrency(freight)
+          ) : (
+            "—"
+          )}
         </span>
       </div>
+      {discountAmount > 0 && (
+        <div className="flex justify-between items-center text-sm sm:text-base">
+          <span className="text-muted-foreground">
+            Desconto{discountCode ? ` (${discountCode})` : ""}
+          </span>
+          <span className="font-medium text-green-600">
+            -{formatCurrency(discountAmount)}
+          </span>
+        </div>
+      )}
       <Separator />
       <div className="flex justify-between items-center text-base sm:text-xl font-bold">
         <span className="text-theme-primary">Total</span>

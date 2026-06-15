@@ -45,6 +45,30 @@ function resolveCreatedOrderId(data: {
   return null;
 }
 
+type AvailableCoupon = {
+  code: string;
+  name: string;
+  description: string | null;
+  discountType: string;
+  discountValue: number;
+  discountAmount: number;
+};
+
+function formatCouponBadge(coupon: AvailableCoupon): string {
+  switch (coupon.discountType) {
+    case "percentage": {
+      const percent = coupon.discountValue / 100;
+      return `${Number.isInteger(percent) ? percent : percent.toFixed(1)}% OFF`;
+    }
+    case "fixed_amount":
+      return `${formatCurrency(coupon.discountValue / 100)} OFF`;
+    case "free_shipping":
+      return "Frete grátis";
+    default:
+      return "";
+  }
+}
+
 export function CheckoutForm() {
   const { items, updateQuantity, removeFromCart, getTotalPrice, clearCart } =
     useCart();
@@ -130,10 +154,28 @@ export function CheckoutForm() {
     }
   }, [loadingRegions, regions, formData.district, getRegionByName]);
 
+  const [couponCode, setCouponCode] = useState("");
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountType: string | null;
+    discountAmount: number;
+    eligibleSubtotal: number;
+    message: string;
+  } | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [availableCoupons, setAvailableCoupons] = useState<AvailableCoupon[]>(
+    [],
+  );
+  const skipNextCouponRevalidation = useRef(false);
+
   const productsSubtotal = getTotalPrice();
   const selectedRegion = getRegionByName(formData.district);
   const freight = selectedRegion ? parseRegionPrice(selectedRegion.price) : 0;
-  const orderTotal = productsSubtotal + freight;
+  const discountAmount = appliedCoupon ? appliedCoupon.discountAmount / 100 : 0;
+  const isFreeShippingCoupon = appliedCoupon?.discountType === "free_shipping";
+  const effectiveFreight = isFreeShippingCoupon ? 0 : freight;
+  const orderTotal = Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
 
   const fetchProductInfo = useCallback(
     async (
@@ -221,6 +263,159 @@ export function CheckoutForm() {
       }
     });
   }, [items, fetchProductInfo, pharmacyNames, productStocks]);
+
+  const validateCoupon = useCallback(
+    async (code: string) => {
+      const couponItems = items
+        .filter((item) => item.pharmacyProductId)
+        .map((item) => ({
+          pharmacy_product_id: item.pharmacyProductId,
+          amount: item.quantity,
+        }));
+
+      if (couponItems.length === 0) {
+        setAppliedCoupon(null);
+        setCouponError("Não foi possível validar o cupom para os itens do carrinho.");
+        return;
+      }
+
+      setCouponLoading(true);
+      setCouponError(null);
+
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/coupons/validate`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(user?.accessToken
+              ? { Authorization: `Bearer ${user.accessToken}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            code,
+            items: couponItems,
+            payment_method: "pix",
+            city: formData.city || undefined,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (response.ok && data.valid) {
+          setAppliedCoupon({
+            code: data.code,
+            discountType: data.discount_type ?? null,
+            discountAmount: data.discount_amount ?? 0,
+            eligibleSubtotal: data.eligible_subtotal ?? 0,
+            message: data.message,
+          });
+          setCouponError(null);
+        } else {
+          setAppliedCoupon(null);
+          setCouponError(data.message || "Cupom inválido.");
+        }
+      } catch (error) {
+        console.error("Error validating coupon:", error);
+        setAppliedCoupon(null);
+        setCouponError("Erro ao validar cupom. Tente novamente.");
+      } finally {
+        setCouponLoading(false);
+      }
+    },
+    [items, formData.city, user],
+  );
+
+  const applyCouponCode = useCallback(
+    (code: string) => {
+      const normalized = code.trim().toUpperCase();
+      if (!normalized) return;
+      skipNextCouponRevalidation.current = true;
+      setCouponCode(normalized);
+      validateCoupon(normalized);
+    },
+    [validateCoupon],
+  );
+
+  const handleApplyCoupon = () => applyCouponCode(couponCode);
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponCode("");
+    setCouponError(null);
+  };
+
+  useEffect(() => {
+    if (!appliedCoupon) return;
+    if (skipNextCouponRevalidation.current) {
+      skipNextCouponRevalidation.current = false;
+      return;
+    }
+    validateCoupon(appliedCoupon.code);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, formData.city, selectedRegion?.name, freight]);
+
+  useEffect(() => {
+    const couponItems = items
+      .filter((item) => item.pharmacyProductId)
+      .map((item) => ({
+        pharmacy_product_id: item.pharmacyProductId,
+        amount: item.quantity,
+      }));
+
+    if (couponItems.length === 0) {
+      setAvailableCoupons([]);
+      return;
+    }
+
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/coupons/available`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(user?.accessToken
+              ? { Authorization: `Bearer ${user.accessToken}` }
+              : {}),
+          },
+          body: JSON.stringify({
+            items: couponItems,
+            payment_method: "pix",
+            city: formData.city || undefined,
+          }),
+        });
+
+        const data = await response.json();
+
+        if (cancelled) return;
+
+        if (response.ok && Array.isArray(data.data)) {
+          setAvailableCoupons(
+            data.data.map((coupon: any) => ({
+              code: coupon.code,
+              name: coupon.name,
+              description: coupon.description ?? null,
+              discountType: coupon.discount_type,
+              discountValue: coupon.discount_value ?? 0,
+              discountAmount: coupon.discount_amount ?? 0,
+            })),
+          );
+        } else {
+          setAvailableCoupons([]);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          console.error("Error fetching available coupons:", error);
+          setAvailableCoupons([]);
+        }
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [items, formData.city, user]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -341,6 +536,7 @@ export function CheckoutForm() {
           postal_code: formData.zipCode,
         },
         products: products,
+        ...(appliedCoupon ? { coupon_code: appliedCoupon.code } : {}),
       };
 
       const response = await fetch(`${API_BASE_URL}/api/customer/orders`, {
@@ -388,12 +584,16 @@ export function CheckoutForm() {
           });
         }
         clearCart();
+        setAppliedCoupon(null);
+        setCouponCode("");
         router.push(`/pedidos?orderId=${createdOrderId}`);
         setIsSubmitting(false);
         return;
       }
 
       clearCart();
+      setAppliedCoupon(null);
+      setCouponCode("");
       alert(
         data.message ||
           "Pedido criado com sucesso. Aguarde a confirmação do pagamento.",
@@ -591,10 +791,75 @@ export function CheckoutForm() {
 
               <Separator className="my-3 sm:my-4" />
 
+              <div className="space-y-2 mb-3 sm:mb-4">
+                <label className="block text-xs sm:text-sm font-medium text-theme-primary">
+                  Cupom de desconto
+                </label>
+                {appliedCoupon ? (
+                  <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 p-2 sm:p-3">
+                    <span className="text-xs sm:text-sm font-medium text-green-600">
+                      Cupom {appliedCoupon.code} aplicado
+                    </span>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleRemoveCoupon}
+                      className="h-8"
+                    >
+                      Remover
+                    </Button>
+                  </div>
+                ) : (
+                  <>
+                    {availableCoupons.length > 0 && (
+                      <div className="flex flex-wrap gap-2">
+                        {availableCoupons.map((coupon) => (
+                          <button
+                            key={coupon.code}
+                            type="button"
+                            onClick={() => applyCouponCode(coupon.code)}
+                            disabled={couponLoading}
+                            title={coupon.description || coupon.name}
+                            className="rounded-full border border-theme-accent/40 bg-theme-accent/10 px-3 py-1 text-xs sm:text-sm font-medium text-theme-accent hover:bg-theme-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            {coupon.code} · {formatCouponBadge(coupon)}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        value={couponCode}
+                        onChange={(e) => setCouponCode(e.target.value)}
+                        placeholder="Digite o código do cupom"
+                        className="focus:border-theme-accent text-sm sm:text-base"
+                        disabled={couponLoading}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={handleApplyCoupon}
+                        disabled={couponLoading || !couponCode.trim()}
+                        className="shrink-0"
+                      >
+                        {couponLoading ? "Aplicando..." : "Aplicar"}
+                      </Button>
+                    </div>
+                  </>
+                )}
+                {couponError && (
+                  <p className="text-xs sm:text-sm text-red-600">{couponError}</p>
+                )}
+              </div>
+
               <OrderTotalSummary
                 productsSubtotal={productsSubtotal}
                 freight={freight}
                 selectedRegionName={selectedRegion?.name}
+                discountAmount={discountAmount}
+                discountCode={appliedCoupon?.code}
+                freeShipping={isFreeShippingCoupon}
               />
             </CardContent>
           </Card>
@@ -731,6 +996,9 @@ export function CheckoutForm() {
                       productsSubtotal={productsSubtotal}
                       freight={freight}
                       selectedRegionName={selectedRegion?.name}
+                      discountAmount={discountAmount}
+                      discountCode={appliedCoupon?.code}
+                      freeShipping={isFreeShippingCoupon}
                       compact
                     />
                   </div>

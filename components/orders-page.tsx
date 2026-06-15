@@ -60,6 +60,8 @@ interface Order {
   total: string;
   productsSubtotal: number;
   deliveryFee: number;
+  discountAmount: number;
+  couponCode?: string | null;
   deliveryRegion?: string | null;
   deliveryAddress: string;
   paymentMethod: string;
@@ -109,6 +111,7 @@ function mapApiOrder(order: any): Order {
     : null;
 
   const deliveryFee = Number.parseFloat(order.delivery_fee || "0") || 0;
+  const discountAmount = Number.parseFloat(order.discount_amount || "0") || 0;
   const productsSubtotal = items.reduce(
     (sum, item) =>
       sum + Number.parseFloat(item.price.replace(",", ".")) * item.quantity,
@@ -124,6 +127,8 @@ function mapApiOrder(order: any): Order {
     total: order.total || "0",
     productsSubtotal,
     deliveryFee,
+    discountAmount,
+    couponCode: order.coupon_code ?? null,
     deliveryRegion: address?.district ?? null,
     deliveryAddress,
     paymentMethod: paymentMap[order.payment_method] || order.payment_method,
@@ -472,6 +477,8 @@ export function OrdersPage() {
                   productsSubtotal={selectedOrder.productsSubtotal}
                   freight={selectedOrder.deliveryFee}
                   selectedRegionName={selectedOrder.deliveryRegion ?? undefined}
+                  discountAmount={selectedOrder.discountAmount}
+                  discountCode={selectedOrder.couponCode ?? undefined}
                 />
               </CardContent>
             </Card>
@@ -658,11 +665,20 @@ export function OrdersPage() {
                       )}
                     </div>
                     <div className="price text-base sm:text-lg">
-                      {formatCurrency(order.productsSubtotal + order.deliveryFee)}
+                      {formatCurrency(
+                        Number.parseFloat(order.total) ||
+                          order.productsSubtotal + order.deliveryFee,
+                      )}
                     </div>
                     {order.deliveryFee > 0 && (
                       <p className="text-xs sm:text-sm text-muted-foreground mt-1">
                         Frete: {formatCurrency(order.deliveryFee)}
+                      </p>
+                    )}
+                    {order.discountAmount > 0 && (
+                      <p className="text-xs sm:text-sm text-green-600 mt-1">
+                        Desconto{order.couponCode ? ` (${order.couponCode})` : ""}: -
+                        {formatCurrency(order.discountAmount)}
                       </p>
                     )}
                   </div>
