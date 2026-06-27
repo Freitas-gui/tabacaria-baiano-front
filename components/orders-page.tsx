@@ -62,6 +62,7 @@ interface Order {
   deliveryFee: number;
   discountAmount: number;
   couponCode?: string | null;
+  couponDiscountType?: string | null;
   deliveryRegion?: string | null;
   deliveryAddress: string;
   paymentMethod: string;
@@ -129,6 +130,7 @@ function mapApiOrder(order: any): Order {
     deliveryFee,
     discountAmount,
     couponCode: order.coupon_code ?? null,
+    couponDiscountType: order.discount_type ?? null,
     deliveryRegion: address?.district ?? null,
     deliveryAddress,
     paymentMethod: paymentMap[order.payment_method] || order.payment_method,
@@ -479,6 +481,7 @@ export function OrdersPage() {
                   selectedRegionName={selectedOrder.deliveryRegion ?? undefined}
                   discountAmount={selectedOrder.discountAmount}
                   discountCode={selectedOrder.couponCode ?? undefined}
+                  freeShipping={selectedOrder.couponDiscountType === "free_shipping"}
                 />
               </CardContent>
             </Card>

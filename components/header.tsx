@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { useCart } from "@/contexts/cart-context";
 import { useUser } from "@/contexts/user-context";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { API_BASE_URL } from "@/lib/api";
 import type { CategoryParent } from "@/lib/categories";
 import { normalizeCategoryParents } from "@/lib/categories";
@@ -97,6 +97,50 @@ const HeaderContent = () => {
     loadCategories(ac.signal);
     return () => ac.abort();
   }, [loadCategories]);
+
+  // Categories (by name) that have at least one product in stock.
+  // null = not loaded yet (or failed) -> fall back to showing all categories.
+  const [inStockCategoryNames, setInStockCategoryNames] = useState<
+    Set<string> | null
+  >(null);
+
+  const loadInStockCategoryNames = useCallback(async (signal: AbortSignal) => {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/product`, { signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const json = await res.json();
+      const data = Array.isArray(json?.data) ? json.data : [];
+      const names = new Set<string>();
+      for (const p of data) {
+        const category = (p as Record<string, unknown> | null)?.category;
+        if (typeof category === "string" && category.trim()) {
+          names.add(category.trim());
+        }
+      }
+      setInStockCategoryNames(names);
+    } catch {
+    }
+  }, []);
+
+  useEffect(() => {
+    const ac = new AbortController();
+    loadInStockCategoryNames(ac.signal);
+    return () => ac.abort();
+  }, [loadInStockCategoryNames]);
+
+  const visibleCategories = useMemo(() => {
+    if (!inStockCategoryNames) return parentCategories;
+    return parentCategories
+      .map((parent) => ({
+        ...parent,
+        children: parent.children.filter(
+          (child) =>
+            inStockCategoryNames.has(child.id) ||
+            inStockCategoryNames.has(child.name),
+        ),
+      }))
+      .filter((parent) => parent.children.length > 0);
+  }, [parentCategories, inStockCategoryNames]);
 
   // Initialize search input from URL params only on initial load
   useEffect(() => {
@@ -367,8 +411,8 @@ const HeaderContent = () => {
               <span className="col-span-2 text-center text-xs text-muted-foreground/70 md:col-auto">
                 Carregando categorias...
               </span>
-            ) : parentCategories.length > 0 ? (
-              parentCategories.map((parent) => (
+            ) : visibleCategories.length > 0 ? (
+              visibleCategories.map((parent) => (
                 <div
                   key={parent.id}
                   className="relative min-w-0 md:w-auto"
