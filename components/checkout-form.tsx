@@ -45,30 +45,6 @@ function resolveCreatedOrderId(data: {
   return null;
 }
 
-type AvailableCoupon = {
-  code: string;
-  name: string;
-  description: string | null;
-  discountType: string;
-  discountValue: number;
-  discountAmount: number;
-};
-
-function formatCouponBadge(coupon: AvailableCoupon): string {
-  switch (coupon.discountType) {
-    case "percentage": {
-      const percent = coupon.discountValue / 100;
-      return `${Number.isInteger(percent) ? percent : percent.toFixed(1)}% OFF`;
-    }
-    case "fixed_amount":
-      return `${formatCurrency(coupon.discountValue / 100)} OFF`;
-    case "free_shipping":
-      return "Frete grátis";
-    default:
-      return "";
-  }
-}
-
 export function CheckoutForm() {
   const { items, updateQuantity, removeFromCart, getTotalPrice, clearCart } =
     useCart();
@@ -164,9 +140,6 @@ export function CheckoutForm() {
   } | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
-  const [availableCoupons, setAvailableCoupons] = useState<AvailableCoupon[]>(
-    [],
-  );
   const skipNextCouponRevalidation = useRef(false);
 
   const productsSubtotal = getTotalPrice();
@@ -353,69 +326,6 @@ export function CheckoutForm() {
     validateCoupon(appliedCoupon.code);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, formData.city, selectedRegion?.name, freight]);
-
-  useEffect(() => {
-    const couponItems = items
-      .filter((item) => item.pharmacyProductId)
-      .map((item) => ({
-        pharmacy_product_id: item.pharmacyProductId,
-        amount: item.quantity,
-      }));
-
-    if (couponItems.length === 0) {
-      setAvailableCoupons([]);
-      return;
-    }
-
-    let cancelled = false;
-
-    (async () => {
-      try {
-        const response = await fetch(`${API_BASE_URL}/api/coupons/available`, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...(user?.accessToken
-              ? { Authorization: `Bearer ${user.accessToken}` }
-              : {}),
-          },
-          body: JSON.stringify({
-            items: couponItems,
-            payment_method: "pix",
-            city: formData.city || undefined,
-          }),
-        });
-
-        const data = await response.json();
-
-        if (cancelled) return;
-
-        if (response.ok && Array.isArray(data.data)) {
-          setAvailableCoupons(
-            data.data.map((coupon: any) => ({
-              code: coupon.code,
-              name: coupon.name,
-              description: coupon.description ?? null,
-              discountType: coupon.discount_type,
-              discountValue: coupon.discount_value ?? 0,
-              discountAmount: coupon.discount_amount ?? 0,
-            })),
-          );
-        } else {
-          setAvailableCoupons([]);
-        }
-      } catch (error) {
-        if (!cancelled) {
-          console.error("Error fetching available coupons:", error);
-          setAvailableCoupons([]);
-        }
-      }
-    })();
-
-    return () => {
-      cancelled = true;
-    };
-  }, [items, formData.city, user]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
@@ -812,22 +722,6 @@ export function CheckoutForm() {
                   </div>
                 ) : (
                   <>
-                    {availableCoupons.length > 0 && (
-                      <div className="flex flex-wrap gap-2">
-                        {availableCoupons.map((coupon) => (
-                          <button
-                            key={coupon.code}
-                            type="button"
-                            onClick={() => applyCouponCode(coupon.code)}
-                            disabled={couponLoading}
-                            title={coupon.description || coupon.name}
-                            className="rounded-full border border-theme-accent/40 bg-theme-accent/10 px-3 py-1 text-xs sm:text-sm font-medium text-theme-accent hover:bg-theme-accent/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            {coupon.code} · {formatCouponBadge(coupon)}
-                          </button>
-                        ))}
-                      </div>
-                    )}
                     <div className="flex gap-2">
                       <Input
                         value={couponCode}
