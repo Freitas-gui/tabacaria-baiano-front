@@ -5,6 +5,17 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
   Package,
   Clock,
   CheckCircle,
@@ -182,6 +193,9 @@ export function OrdersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
+  const [cancelDialogOrderId, setCancelDialogOrderId] = useState<string | null>(null);
+  const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const loadOrders = useCallback(async () => {
     if (!user || !user.accessToken) {
@@ -282,6 +296,62 @@ export function OrdersPage() {
       }
     }
   }, [user]);
+
+  const openCancelDialog = (orderId: string) => {
+    setCancelError(null);
+    setCancelDialogOrderId(orderId);
+  };
+
+  const closeCancelDialog = () => {
+    setCancelDialogOrderId(null);
+    setCancelError(null);
+  };
+
+  const confirmCancelOrder = useCallback(
+    async (orderId: string, context: "list" | "detail") => {
+      if (!user || !user.accessToken) {
+        setCancelError("Usuário não autenticado");
+        return;
+      }
+
+      setCancelingOrderId(orderId);
+      setCancelError(null);
+
+      try {
+        const response = await fetch(
+          `${API_BASE_URL}/api/customer/orders/${orderId}/cancel`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${user.accessToken}`,
+            },
+          },
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.message || "Erro ao cancelar pedido");
+        }
+
+        setCancelDialogOrderId(null);
+
+        if (context === "detail") {
+          await fetchOrderDetails(orderId);
+        } else {
+          await loadOrders();
+        }
+      } catch (err) {
+        setCancelError(
+          err instanceof Error ? err.message : "Erro ao cancelar pedido",
+        );
+      } finally {
+        setCancelingOrderId(null);
+      }
+    },
+    [user, fetchOrderDetails, loadOrders],
+  );
 
   useEffect(() => {
     if (!orderIdFromUrl || !user?.accessToken) {
@@ -415,14 +485,65 @@ export function OrdersPage() {
                       Realizado em {formatDate(selectedOrder.date)}
                     </p>
                   </div>
-                  <Badge
-                    className={`${getStatusColor(selectedOrder.status)} border`}
-                  >
-                    <div className="flex items-center space-x-1">
-                      {getStatusIcon(selectedOrder.status)}
-                      <span>{selectedOrder.status}</span>
-                    </div>
-                  </Badge>
+                  <div className="flex items-center gap-2">
+                    <Badge
+                      className={`${getStatusColor(selectedOrder.status)} border`}
+                    >
+                      <div className="flex items-center space-x-1">
+                        {getStatusIcon(selectedOrder.status)}
+                        <span>{selectedOrder.status}</span>
+                      </div>
+                    </Badge>
+                    {selectedOrder.status === "Aguardando Confirmação" && (
+                      <AlertDialog
+                        open={cancelDialogOrderId === selectedOrder.id}
+                        onOpenChange={(open) => {
+                          if (!open) closeCancelDialog();
+                        }}
+                      >
+                        <AlertDialogTrigger asChild>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="text-red-700 border-red-200 hover:bg-red-50"
+                            onClick={() => openCancelDialog(selectedOrder.id)}
+                          >
+                            Cancelar pedido
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Cancelar pedido {selectedOrder.orderNumber}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Essa ação não pode ser desfeita.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          {cancelError && (
+                            <p className="text-sm text-red-600">{cancelError}</p>
+                          )}
+                          <AlertDialogFooter>
+                            <AlertDialogCancel onClick={closeCancelDialog}>
+                              Voltar
+                            </AlertDialogCancel>
+                            <AlertDialogAction
+                              onClick={(e) => {
+                                e.preventDefault();
+                                confirmCancelOrder(selectedOrder.id, "detail");
+                              }}
+                              disabled={cancelingOrderId === selectedOrder.id}
+                              className="bg-red-700 hover:bg-red-800"
+                            >
+                              {cancelingOrderId === selectedOrder.id
+                                ? "Cancelando..."
+                                : "Confirmar cancelamento"}
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
                 </div>
               </CardHeader>
               <CardContent className="p-6">
@@ -686,6 +807,61 @@ export function OrdersPage() {
                     )}
                   </div>
                 </div>
+
+                {order.status === "Aguardando Confirmação" && (
+                  <div className="mb-3 sm:mb-4">
+                    <AlertDialog
+                      open={cancelDialogOrderId === order.id}
+                      onOpenChange={(open) => {
+                        if (!open) closeCancelDialog();
+                      }}
+                    >
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="text-red-700 border-red-200 hover:bg-red-50"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openCancelDialog(order.id);
+                          }}
+                        >
+                          Cancelar pedido
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>
+                            Cancelar pedido {order.orderNumber}?
+                          </AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Essa ação não pode ser desfeita.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        {cancelError && (
+                          <p className="text-sm text-red-600">{cancelError}</p>
+                        )}
+                        <AlertDialogFooter>
+                          <AlertDialogCancel onClick={closeCancelDialog}>
+                            Voltar
+                          </AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={(e) => {
+                              e.preventDefault();
+                              confirmCancelOrder(order.id, "list");
+                            }}
+                            disabled={cancelingOrderId === order.id}
+                            className="bg-red-700 hover:bg-red-800"
+                          >
+                            {cancelingOrderId === order.id
+                              ? "Cancelando..."
+                              : "Confirmar cancelamento"}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                )}
 
                 <div className="flex flex-wrap items-center gap-3 sm:gap-4 mb-3 sm:mb-4">
                   {order.items.slice(0, 3).map((item, index) => (
