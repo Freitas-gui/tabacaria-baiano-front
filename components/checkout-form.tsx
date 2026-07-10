@@ -331,7 +331,7 @@ export function CheckoutForm() {
     }
     validateCoupon(appliedCoupon.code);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [items, formData.city, selectedRegion?.name, freight]);
+  }, [items, formData.city, selectedRegion?.name, freight, deliveryMethod]);
 
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
