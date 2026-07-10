@@ -53,6 +53,7 @@ export function CheckoutForm() {
   const { regions, loading: loadingRegions, error: regionsError, getRegionByName } =
     useDeliveryRegions();
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [deliveryMethod, setDeliveryMethod] = useState<"delivery" | "pickup">("delivery");
   const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
     {},
   );
@@ -144,7 +145,12 @@ export function CheckoutForm() {
 
   const productsSubtotal = getTotalPrice();
   const selectedRegion = getRegionByName(formData.district);
-  const freight = selectedRegion ? parseRegionPrice(selectedRegion.price) : 0;
+  const freight =
+    deliveryMethod === "pickup"
+      ? 0
+      : selectedRegion
+        ? parseRegionPrice(selectedRegion.price)
+        : 0;
   const discountAmount = appliedCoupon ? appliedCoupon.discountAmount / 100 : 0;
   const isFreeShippingCoupon = appliedCoupon?.discountType === "free_shipping";
   const effectiveFreight = isFreeShippingCoupon ? 0 : freight;
@@ -268,7 +274,7 @@ export function CheckoutForm() {
             code,
             items: couponItems,
             payment_method: "pix",
-            city: formData.city || undefined,
+            city: deliveryMethod === "pickup" ? undefined : formData.city || undefined,
           }),
         });
 
@@ -295,7 +301,7 @@ export function CheckoutForm() {
         setCouponLoading(false);
       }
     },
-    [items, formData.city, user],
+    [items, formData.city, user, deliveryMethod],
   );
 
   const applyCouponCode = useCallback(
@@ -390,7 +396,7 @@ export function CheckoutForm() {
       return;
     }
 
-    if (!selectedRegion) {
+    if (deliveryMethod === "delivery" && !selectedRegion) {
       alert("Selecione uma região de entrega válida.");
       return;
     }
@@ -435,16 +441,21 @@ export function CheckoutForm() {
         user_id: user.id,
         payment_method: "pix",
         phone: unmaskPhone(formData.phone),
+        delivery_method: deliveryMethod,
         delivery_fee: freight,
-        address: {
-          street: formData.street,
-          street_number: formData.street_number,
-          address_details: formData.address_details || "",
-          district: selectedRegion.name,
-          city: formData.city,
-          state: formData.state,
-          postal_code: formData.zipCode,
-        },
+        ...(deliveryMethod === "delivery"
+          ? {
+              address: {
+                street: formData.street,
+                street_number: formData.street_number,
+                address_details: formData.address_details || "",
+                district: selectedRegion!.name,
+                city: formData.city,
+                state: formData.state,
+                postal_code: formData.zipCode,
+              },
+            }
+          : {}),
         products: products,
         ...(appliedCoupon ? { coupon_code: appliedCoupon.code } : {}),
       };
@@ -754,6 +765,7 @@ export function CheckoutForm() {
                 discountAmount={discountAmount}
                 discountCode={appliedCoupon?.code}
                 freeShipping={isFreeShippingCoupon}
+                showFreight={deliveryMethod === "delivery"}
               />
             </CardContent>
           </Card>
@@ -775,98 +787,141 @@ export function CheckoutForm() {
                 >
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Rua *
+                      Forma de entrega *
                     </label>
-                    <Input
-                      name="street"
-                      value={formData.street}
-                      onChange={handleInputChange}
-                      required
-                      placeholder="Nome da rua"
-                      className="focus:border-theme-accent text-sm sm:text-base"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                        Número *
+                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
+                      <label className="flex items-center gap-2 text-sm text-theme-primary">
+                        <input
+                          type="radio"
+                          name="deliveryMethod"
+                          value="delivery"
+                          checked={deliveryMethod === "delivery"}
+                          onChange={() => setDeliveryMethod("delivery")}
+                        />
+                        Entrega
                       </label>
-                      <Input
-                        name="street_number"
-                        value={formData.street_number}
-                        onChange={handleInputChange}
-                        required
-                        placeholder="123"
-                        className="focus:border-theme-accent text-sm sm:text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                        Complemento
+                      <label className="flex items-center gap-2 text-sm text-theme-primary">
+                        <input
+                          type="radio"
+                          name="deliveryMethod"
+                          value="pickup"
+                          checked={deliveryMethod === "pickup"}
+                          onChange={() => setDeliveryMethod("pickup")}
+                        />
+                        Retirar na loja
                       </label>
-                      <Input
-                        name="address_details"
-                        value={formData.address_details}
-                        onChange={handleInputChange}
-                        placeholder="Apto, Bloco, etc"
-                        className="focus:border-theme-accent text-sm sm:text-base"
-                      />
                     </div>
                   </div>
 
-                  <DeliveryRegionField
-                    id="checkout-region"
-                    regions={regions}
-                    value={formData.district}
-                    onChange={handleRegionChange}
-                    loading={loadingRegions}
-                    error={regionsError}
-                    disabled={isSubmitting}
-                  />
+                  {deliveryMethod === "delivery" ? (
+                    <>
+                      <div>
+                        <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          Rua *
+                        </label>
+                        <Input
+                          name="street"
+                          value={formData.street}
+                          onChange={handleInputChange}
+                          required
+                          placeholder="Nome da rua"
+                          className="focus:border-theme-accent text-sm sm:text-base"
+                        />
+                      </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                        Cidade *
-                      </label>
-                      <Input
-                        name="city"
-                        value={formData.city}
-                        onChange={handleInputChange}
-                        required
-                        placeholder="Sua cidade"
-                        className="focus:border-theme-accent text-sm sm:text-base"
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                        <div>
+                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                            Número *
+                          </label>
+                          <Input
+                            name="street_number"
+                            value={formData.street_number}
+                            onChange={handleInputChange}
+                            required
+                            placeholder="123"
+                            className="focus:border-theme-accent text-sm sm:text-base"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                            Complemento
+                          </label>
+                          <Input
+                            name="address_details"
+                            value={formData.address_details}
+                            onChange={handleInputChange}
+                            placeholder="Apto, Bloco, etc"
+                            className="focus:border-theme-accent text-sm sm:text-base"
+                          />
+                        </div>
+                      </div>
+
+                      <DeliveryRegionField
+                        id="checkout-region"
+                        regions={regions}
+                        value={formData.district}
+                        onChange={handleRegionChange}
+                        loading={loadingRegions}
+                        error={regionsError}
+                        disabled={isSubmitting}
                       />
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                        <div>
+                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                            Cidade *
+                          </label>
+                          <Input
+                            name="city"
+                            value={formData.city}
+                            onChange={handleInputChange}
+                            required
+                            placeholder="Sua cidade"
+                            className="focus:border-theme-accent text-sm sm:text-base"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                            Estado *
+                          </label>
+                          <Input
+                            name="state"
+                            value={formData.state}
+                            onChange={handleInputChange}
+                            required
+                            placeholder="UF"
+                            maxLength={2}
+                            className="focus:border-theme-accent text-sm sm:text-base"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                            CEP *
+                          </label>
+                          <Input
+                            name="zipCode"
+                            value={formData.zipCode}
+                            onChange={handleInputChange}
+                            required
+                            placeholder="00000-000"
+                            className="focus:border-theme-accent text-sm sm:text-base"
+                          />
+                        </div>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
+                      <p className="text-xs sm:text-sm font-medium text-theme-primary">
+                        Retirar na loja
+                      </p>
+                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                        Rua Dona Candi, 46, bairro Pacatá
+                        <br />
+                        Porto Seguro — BA, CEP 45810-000
+                      </p>
                     </div>
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                        Estado *
-                      </label>
-                      <Input
-                        name="state"
-                        value={formData.state}
-                        onChange={handleInputChange}
-                        required
-                        placeholder="UF"
-                        maxLength={2}
-                        className="focus:border-theme-accent text-sm sm:text-base"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                        CEP *
-                      </label>
-                      <Input
-                        name="zipCode"
-                        value={formData.zipCode}
-                        onChange={handleInputChange}
-                        required
-                        placeholder="00000-000"
-                        className="focus:border-theme-accent text-sm sm:text-base"
-                      />
-                    </div>
-                  </div>
+                  )}
 
                   <div>
                     <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
@@ -893,6 +948,7 @@ export function CheckoutForm() {
                       discountAmount={discountAmount}
                       discountCode={appliedCoupon?.code}
                       freeShipping={isFreeShippingCoupon}
+                      showFreight={deliveryMethod === "delivery"}
                       compact
                     />
                   </div>
@@ -909,7 +965,11 @@ export function CheckoutForm() {
 
                   <Button
                     type="submit"
-                    disabled={isSubmitting || loadingRegions || !selectedRegion}
+                    disabled={
+                      isSubmitting ||
+                      (deliveryMethod === "delivery" &&
+                        (loadingRegions || !selectedRegion))
+                    }
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >
                     {isSubmitting
