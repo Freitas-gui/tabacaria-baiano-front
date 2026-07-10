@@ -74,6 +74,7 @@ interface Order {
   discountAmount: number;
   couponCode?: string | null;
   couponDiscountType?: string | null;
+  deliveryMethod: "delivery" | "pickup";
   deliveryRegion?: string | null;
   deliveryAddress: string;
   paymentMethod: string;
@@ -102,10 +103,16 @@ function mapApiOrder(order: any): Order {
         : null,
     })) || [];
 
+  const deliveryMethod: Order["deliveryMethod"] =
+    order.delivery_method === "pickup" ? "pickup" : "delivery";
+
   const address = order.address;
-  const deliveryAddress = address
-    ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
-    : "Endereço não disponível";
+  const deliveryAddress =
+    deliveryMethod === "pickup"
+      ? "Retirar na loja"
+      : address
+        ? `${address.street}, ${address.street_number} - ${address.district}, ${address.city} - ${address.state}`
+        : "Endereço não disponível";
 
   const paymentMap: Record<string, string> = {
     credit_card: "Cartão de Crédito",
@@ -142,6 +149,7 @@ function mapApiOrder(order: any): Order {
     discountAmount,
     couponCode: order.coupon_code ?? null,
     couponDiscountType: order.discount_type ?? null,
+    deliveryMethod,
     deliveryRegion: address?.district ?? null,
     deliveryAddress,
     paymentMethod: paymentMap[order.payment_method] || order.payment_method,
@@ -603,6 +611,7 @@ export function OrdersPage() {
                   discountAmount={selectedOrder.discountAmount}
                   discountCode={selectedOrder.couponCode ?? undefined}
                   freeShipping={selectedOrder.couponDiscountType === "free_shipping"}
+                  showFreight={selectedOrder.deliveryMethod === "delivery"}
                 />
               </CardContent>
             </Card>
@@ -785,6 +794,14 @@ export function OrdersPage() {
                           className="bg-amber-50 text-amber-900 border-amber-200 text-xs"
                         >
                           Aguardando PIX
+                        </Badge>
+                      )}
+                      {order.deliveryMethod === "pickup" && (
+                        <Badge
+                          variant="outline"
+                          className="bg-blue-50 text-blue-900 border-blue-200 text-xs"
+                        >
+                          Retirar na loja
                         </Badge>
                       )}
                     </div>
