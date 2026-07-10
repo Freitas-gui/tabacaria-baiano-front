@@ -28,3 +28,6 @@ next-env.d.ts
 
 # local api config
 /lib/api.ts
+
+# worktrees
+.worktrees/
