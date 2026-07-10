@@ -787,9 +787,6 @@ export function CheckoutForm() {
                   className="space-y-3 sm:space-y-4 mt-2 sm:mt-4"
                 >
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Forma de entrega *
-                    </label>
                     <div className="flex items-center gap-3">
                       <Switch
                         id="pickup-toggle"
@@ -809,6 +806,9 @@ export function CheckoutForm() {
 
                   {deliveryMethod === "delivery" ? (
                     <>
+                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                      Endereço para entrega:
+                    </label>
                       <div>
                         <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                           Rua *
