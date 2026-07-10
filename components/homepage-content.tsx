@@ -361,11 +361,11 @@ export function HomepageContent() {
               ))}
             </div>
           ) : (
-            <div className="grid grid-cols-3 gap-4 md:grid-cols-4 lg:grid-cols-6 primary">
+            <div className="flex flex-wrap justify-center gap-4 primary">
               {parentCategories.map((parent) => (
                 <Card
                   key={parent.id}
-                  className={`text-center category-hover flex min-h-[140px] cursor-pointer flex-col justify-between p-4 ${
+                  className={`text-center category-hover flex min-h-[140px] w-[calc((100%-2rem)/3)] cursor-pointer flex-col justify-between p-4 md:w-[calc((100%-3rem)/4)] lg:w-[calc((100%-5rem)/6)] ${
                     highlightedParentId === parent.id
                       ? "ring-2 ring-theme-accent bg-muted/40"
                       : ""

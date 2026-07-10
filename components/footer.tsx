@@ -29,17 +29,18 @@ export function Footer() {
     <>
       <footer className="footer-site mt-8 sm:mt-16">
         <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-12">
+          <Link href="/" className="block mb-8 sm:mb-12 overflow-hidden rounded-2xl">
+            <Image
+              src="/logo-footer.png"
+              alt="Tabacaria do Baiano"
+              width={2172}
+              height={724}
+              className="h-auto w-full"
+            />
+          </Link>
+
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div>
-              <Link href="/" className="inline-block mb-3">
-                <Image
-                  src="/logo-2-transparent.png"
-                  alt="Tabacaria do Baiano"
-                  width={240}
-                  height={160}
-                  className="h-auto w-full max-w-[200px] sm:max-w-[240px]"
-                />
-              </Link>
               <p className="text-sm opacity-90 mb-2">{STORE_INFO.tagline}</p>
               <p className="text-sm opacity-90 flex items-start gap-1.5">
                 <MapPin className="h-4 w-4 shrink-0 mt-0.5 text-[color:var(--footer-muted)]" />
