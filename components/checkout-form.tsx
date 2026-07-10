@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -789,25 +790,18 @@ export function CheckoutForm() {
                     <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                       Forma de entrega *
                     </label>
-                    <div className="flex flex-col sm:flex-row gap-2 sm:gap-4">
-                      <label className="flex items-center gap-2 text-sm text-theme-primary">
-                        <input
-                          type="radio"
-                          name="deliveryMethod"
-                          value="delivery"
-                          checked={deliveryMethod === "delivery"}
-                          onChange={() => setDeliveryMethod("delivery")}
-                        />
-                        Entrega
-                      </label>
-                      <label className="flex items-center gap-2 text-sm text-theme-primary">
-                        <input
-                          type="radio"
-                          name="deliveryMethod"
-                          value="pickup"
-                          checked={deliveryMethod === "pickup"}
-                          onChange={() => setDeliveryMethod("pickup")}
-                        />
+                    <div className="flex items-center gap-3">
+                      <Switch
+                        id="pickup-toggle"
+                        checked={deliveryMethod === "pickup"}
+                        onCheckedChange={(checked) =>
+                          setDeliveryMethod(checked ? "pickup" : "delivery")
+                        }
+                      />
+                      <label
+                        htmlFor="pickup-toggle"
+                        className="text-sm text-theme-primary cursor-pointer"
+                      >
                         Retirar na loja
                       </label>
                     </div>
