@@ -11,6 +11,7 @@ type OrderTotalSummaryProps = {
   discountAmount?: number;
   discountCode?: string | null;
   freeShipping?: boolean;
+  showFreight?: boolean;
 };
 
 export function OrderTotalSummary({
@@ -21,6 +22,7 @@ export function OrderTotalSummary({
   discountAmount = 0,
   discountCode,
   freeShipping = false,
+  showFreight = true,
 }: OrderTotalSummaryProps) {
   const effectiveFreight = freeShipping ? 0 : freight;
   const total = Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
@@ -33,26 +35,28 @@ export function OrderTotalSummary({
           {formatCurrency(productsSubtotal)}
         </span>
       </div>
-      <div className="flex justify-between items-center text-sm sm:text-base">
-        <span className="text-muted-foreground">
-          Frete
-          {selectedRegionName ? ` (${selectedRegionName})` : ""}
-        </span>
-        <span className="font-medium text-theme-primary">
-          {freeShipping && freight > 0 ? (
-            <>
-              <span className="line-through text-muted-foreground mr-1">
-                {formatCurrency(freight)}
-              </span>
-              Grátis
-            </>
-          ) : freight > 0 ? (
-            formatCurrency(freight)
-          ) : (
-            "—"
-          )}
-        </span>
-      </div>
+      {showFreight && (
+        <div className="flex justify-between items-center text-sm sm:text-base">
+          <span className="text-muted-foreground">
+            Frete
+            {selectedRegionName ? ` (${selectedRegionName})` : ""}
+          </span>
+          <span className="font-medium text-theme-primary">
+            {freeShipping && freight > 0 ? (
+              <>
+                <span className="line-through text-muted-foreground mr-1">
+                  {formatCurrency(freight)}
+                </span>
+                Grátis
+              </>
+            ) : freight > 0 ? (
+              formatCurrency(freight)
+            ) : (
+              "—"
+            )}
+          </span>
+        </div>
+      )}
       {discountAmount > 0 && (
         <div className="flex justify-between items-center text-sm sm:text-base">
           <span className="text-muted-foreground">
