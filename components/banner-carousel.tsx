@@ -8,8 +8,6 @@ import {
   Carousel,
   CarouselContent,
   CarouselItem,
-  CarouselNext,
-  CarouselPrevious,
   type CarouselApi,
 } from "@/components/ui/carousel";
 import { useBanners, type Banner } from "@/hooks/use-banners";
@@ -116,12 +114,6 @@ export function BannerCarousel() {
             </CarouselItem>
           ))}
         </CarouselContent>
-        {banners.length > 1 && (
-          <>
-            <CarouselPrevious className="hidden md:flex left-4" />
-            <CarouselNext className="hidden md:flex right-4" />
-          </>
-        )}
       </Carousel>
       {banners.length > 1 && (
         <div className="flex justify-center gap-2 mt-3">
