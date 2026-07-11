@@ -3,6 +3,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Search } from "lucide-react";
+import { BannerCarousel } from "@/components/banner-carousel";
 import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -307,6 +308,7 @@ export function HomepageContent() {
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+      <BannerCarousel />
       {/* Search Results Header */}
       {searchQuery && (
         <div className="mb-6 sm:mb-8 p-3 sm:p-4 bg-[var(--bg-secondary)] border border-border rounded-[14px]">
