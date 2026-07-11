@@ -23,6 +23,7 @@ import {
   Calendar,
   MapPin,
   CreditCard,
+  MessageCircle,
 } from "lucide-react";
 import Image from "next/image";
 import { useState, useEffect, useCallback } from "react";
@@ -40,6 +41,7 @@ import {
 } from "@/lib/pix-payment";
 import { formatCurrency } from "@/lib/delivery-regions";
 import { OrderTotalSummary } from "@/components/order-total-summary";
+import { STORE_INFO } from "@/lib/store-info";
 
 interface VariationOption {
   typeName: string;
@@ -189,6 +191,32 @@ function getPaymentStatusLabel(status?: string | null): string | null {
     refunded: "Reembolsado",
   };
   return labels[status] || status;
+}
+
+function buildWhatsAppTrackingUrl(order: Order): string {
+  const itemsList = order.items
+    .map((item) => `- ${item.quantity}x ${item.name}`)
+    .join("\n");
+
+  const freeShipping = order.couponDiscountType === "free_shipping";
+  const effectiveFreight = freeShipping ? 0 : order.deliveryFee;
+  const total = Math.max(
+    0,
+    order.productsSubtotal + effectiveFreight - order.discountAmount,
+  );
+
+  const message = [
+    "Olá Baiano, gostaria de acompanhar meu pedido.",
+    "",
+    `Pedido: #${order.orderNumber}`,
+    `Status: ${order.status}`,
+    "Itens:",
+    itemsList,
+    `Total: ${formatCurrency(total)}`,
+    `Endereço de entrega: ${order.deliveryAddress}`,
+  ].join("\n");
+
+  return `${STORE_INFO.whatsappUrl}?text=${encodeURIComponent(message)}`;
 }
 
 export function OrdersPage() {
@@ -502,6 +530,19 @@ export function OrdersPage() {
                         <span>{selectedOrder.status}</span>
                       </div>
                     </Badge>
+                    {selectedOrder.status !== "Entregue" &&
+                      selectedOrder.status !== "Cancelado" && (
+                        <Button asChild variant="outline" size="sm">
+                          <a
+                            href={buildWhatsAppTrackingUrl(selectedOrder)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                          >
+                            <MessageCircle className="w-4 h-4" />
+                            Acompanhar pelo WhatsApp
+                          </a>
+                        </Button>
+                      )}
                     {selectedOrder.status === "Aguardando Confirmação" && (
                       <AlertDialog
                         open={cancelDialogOrderId === selectedOrder.id}
