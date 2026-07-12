@@ -195,7 +195,7 @@ function getPaymentStatusLabel(status?: string | null): string | null {
 
 function buildWhatsAppTrackingUrl(order: Order): string {
   const itemsList = order.items
-    .map((item) => `- ${item.quantity}x ${item.name}`)
+    .map((item) => `* ${item.quantity}x ${item.name}`)
     .join("\n");
 
   const freeShipping = order.couponDiscountType === "free_shipping";
@@ -206,14 +206,16 @@ function buildWhatsAppTrackingUrl(order: Order): string {
   );
 
   const message = [
-    "Olá Baiano, gostaria de acompanhar meu pedido.",
+    "Salve tropa do baiano, gostaria de acompanhar meu pedido.",
     "",
     `Pedido: #${order.orderNumber}`,
     `Status: ${order.status}`,
-    "Itens:",
+    "",
+    "🎁 Itens:",
     itemsList,
     `Total: ${formatCurrency(total)}`,
-    `Endereço de entrega: ${order.deliveryAddress}`,
+    "",
+    `📍Endereço de entrega: ${order.deliveryAddress}`,
   ].join("\n");
 
   return `${STORE_INFO.whatsappUrl}?text=${encodeURIComponent(message)}`;
