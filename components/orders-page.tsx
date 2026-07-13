@@ -218,7 +218,11 @@ function buildWhatsAppTrackingUrl(order: Order): string {
     `📍Endereço de entrega: ${order.deliveryAddress}`,
   ].join("\n");
 
-  return `${STORE_INFO.whatsappUrl}?text=${encodeURIComponent(message)}`;
+  const phone = STORE_INFO.whatsappUrl.replace("https://wa.me/", "");
+  // wa.me's redirect strips 4-byte UTF-8 emoji (e.g. 🎁, 📍) from the "text"
+  // param, replacing them with U+FFFD. api.whatsapp.com/send is the same
+  // destination without that redirect hop, so emoji survive intact.
+  return `https://api.whatsapp.com/send?phone=${phone}&text=${encodeURIComponent(message)}`;
 }
 
 export function OrdersPage() {
