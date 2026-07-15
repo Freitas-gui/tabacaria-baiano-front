@@ -9,7 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -23,7 +22,10 @@ import {
 import { storePixPaymentForOrder } from "@/lib/pix-payment";
 import { DeliveryRegionField } from "@/components/delivery-region-field";
 import { OrderTotalSummary } from "@/components/order-total-summary";
+import { ShippingQuoteOptions } from "@/components/shipping-quote-options";
 import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
+import { useCorreiosQuote } from "@/hooks/use-correios-quote";
+import { isValidCep } from "@/lib/correios-freight";
 import {
   formatCurrency,
   parseRegionPrice,
@@ -54,7 +56,7 @@ export function CheckoutForm() {
   const { regions, loading: loadingRegions, error: regionsError, getRegionByName } =
     useDeliveryRegions();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [deliveryMethod, setDeliveryMethod] = useState<"delivery" | "pickup">("delivery");
+  const [deliveryMethod, setDeliveryMethod] = useState<"delivery" | "pickup" | "shipping">("delivery");
   const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
     {},
   );
@@ -110,7 +112,12 @@ export function CheckoutForm() {
   }, [user]);
 
   useEffect(() => {
-    if (loadingRegions || regions.length === 0 || !formData.district) {
+    if (
+      deliveryMethod !== "delivery" ||
+      loadingRegions ||
+      regions.length === 0 ||
+      !formData.district
+    ) {
       return;
     }
 
@@ -130,7 +137,7 @@ export function CheckoutForm() {
         district: "",
       }));
     }
-  }, [loadingRegions, regions, formData.district, getRegionByName]);
+  }, [deliveryMethod, loadingRegions, regions, formData.district, getRegionByName]);
 
   const [couponCode, setCouponCode] = useState("");
   const [appliedCoupon, setAppliedCoupon] = useState<{
@@ -146,12 +153,35 @@ export function CheckoutForm() {
 
   const productsSubtotal = getTotalPrice();
   const selectedRegion = getRegionByName(formData.district);
+
+  const quoteItems = items
+    .filter((item) => item.pharmacyProductId)
+    .map((item) => ({
+      pharmacy_product_id: item.pharmacyProductId as string,
+      amount: item.quantity,
+    }));
+
+  const {
+    quotes: shippingQuotes,
+    loading: shippingLoading,
+    error: shippingError,
+    selectedCode: shippingServiceCode,
+    setSelectedCode: setShippingServiceCode,
+    selectedQuote: selectedShippingQuote,
+  } = useCorreiosQuote({
+    enabled: deliveryMethod === "shipping",
+    destinationCep: formData.zipCode,
+    items: quoteItems,
+  });
+
   const freight =
     deliveryMethod === "pickup"
       ? 0
-      : selectedRegion
-        ? parseRegionPrice(selectedRegion.price)
-        : 0;
+      : deliveryMethod === "shipping"
+        ? (selectedShippingQuote?.price_cents ?? 0) / 100
+        : selectedRegion
+          ? parseRegionPrice(selectedRegion.price)
+          : 0;
   const discountAmount = appliedCoupon ? appliedCoupon.discountAmount / 100 : 0;
   const isFreeShippingCoupon = appliedCoupon?.discountType === "free_shipping";
   const effectiveFreight = isFreeShippingCoupon ? 0 : freight;
@@ -402,6 +432,17 @@ export function CheckoutForm() {
       return;
     }
 
+    if (deliveryMethod === "shipping") {
+      if (!isValidCep(formData.zipCode)) {
+        alert("Informe um CEP válido para calcular o frete.");
+        return;
+      }
+      if (!selectedShippingQuote) {
+        alert("Selecione uma modalidade de envio dos Correios.");
+        return;
+      }
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -444,13 +485,16 @@ export function CheckoutForm() {
         phone: unmaskPhone(formData.phone),
         delivery_method: deliveryMethod,
         delivery_fee: freight,
-        ...(deliveryMethod === "delivery"
+        ...(deliveryMethod === "shipping"
+          ? { shipping_service_code: selectedShippingQuote!.service_code }
+          : {}),
+        ...(deliveryMethod !== "pickup"
           ? {
               address: {
                 street: formData.street,
                 street_number: formData.street_number,
                 address_details: formData.address_details || "",
-                district: selectedRegion!.name,
+                district: deliveryMethod === "delivery" ? selectedRegion!.name : formData.district,
                 city: formData.city,
                 state: formData.state,
                 postal_code: formData.zipCode,
@@ -762,11 +806,15 @@ export function CheckoutForm() {
               <OrderTotalSummary
                 productsSubtotal={productsSubtotal}
                 freight={freight}
-                selectedRegionName={selectedRegion?.name}
+                selectedRegionName={
+                  deliveryMethod === "delivery"
+                    ? selectedRegion?.name
+                    : selectedShippingQuote?.service_name
+                }
                 discountAmount={discountAmount}
                 discountCode={appliedCoupon?.code}
                 freeShipping={isFreeShippingCoupon}
-                showFreight={deliveryMethod === "delivery"}
+                showFreight={deliveryMethod !== "pickup"}
               />
             </CardContent>
           </Card>
@@ -786,25 +834,29 @@ export function CheckoutForm() {
                   onSubmit={handleSubmit}
                   className="space-y-3 sm:space-y-4 mt-2 sm:mt-4"
                 >
-                  <div>
-                    <div className="flex items-center gap-3">
-                      <Switch
-                        id="pickup-toggle"
-                        checked={deliveryMethod === "pickup"}
-                        onCheckedChange={(checked) =>
-                          setDeliveryMethod(checked ? "pickup" : "delivery")
-                        }
-                      />
-                      <label
-                        htmlFor="pickup-toggle"
-                        className="text-sm text-theme-primary cursor-pointer"
-                      >
-                        Retirar na loja
+                  <div className="space-y-2">
+                    <p className="text-sm font-medium text-theme-primary">Como deseja receber?</p>
+                    {(
+                      [
+                        { value: "delivery", label: "Entrega local (Porto Seguro)" },
+                        { value: "pickup", label: "Retirar na loja" },
+                        { value: "shipping", label: "Envio nacional (Correios)" },
+                      ] as const
+                    ).map((option) => (
+                      <label key={option.value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="radio"
+                          name="delivery-method"
+                          value={option.value}
+                          checked={deliveryMethod === option.value}
+                          onChange={() => setDeliveryMethod(option.value)}
+                        />
+                        <span className="text-sm text-theme-primary">{option.label}</span>
                       </label>
-                    </div>
+                    ))}
                   </div>
 
-                  {deliveryMethod === "delivery" ? (
+                  {deliveryMethod !== "pickup" ? (
                     <>
                     <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
                       Endereço para entrega:
@@ -851,15 +903,31 @@ export function CheckoutForm() {
                         </div>
                       </div>
 
-                      <DeliveryRegionField
-                        id="checkout-region"
-                        regions={regions}
-                        value={formData.district}
-                        onChange={handleRegionChange}
-                        loading={loadingRegions}
-                        error={regionsError}
-                        disabled={isSubmitting}
-                      />
+                      {deliveryMethod === "delivery" ? (
+                        <DeliveryRegionField
+                          id="checkout-region"
+                          regions={regions}
+                          value={formData.district}
+                          onChange={handleRegionChange}
+                          loading={loadingRegions}
+                          error={regionsError}
+                          disabled={isSubmitting}
+                        />
+                      ) : (
+                        <div>
+                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                            Bairro *
+                          </label>
+                          <Input
+                            name="district"
+                            value={formData.district}
+                            onChange={handleInputChange}
+                            required
+                            placeholder="Seu bairro"
+                            className="focus:border-theme-accent text-sm sm:text-base"
+                          />
+                        </div>
+                      )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                         <div>
@@ -903,6 +971,22 @@ export function CheckoutForm() {
                           />
                         </div>
                       </div>
+
+                      {deliveryMethod === "shipping" && (
+                        <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 space-y-2">
+                          <p className="text-xs sm:text-sm font-medium text-theme-primary">
+                            Frete — Correios
+                          </p>
+                          <ShippingQuoteOptions
+                            quotes={shippingQuotes}
+                            loading={shippingLoading}
+                            error={shippingError}
+                            cepFilled={isValidCep(formData.zipCode)}
+                            selectedCode={shippingServiceCode}
+                            onSelect={setShippingServiceCode}
+                          />
+                        </div>
+                      )}
                     </>
                   ) : (
                     <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
@@ -938,11 +1022,15 @@ export function CheckoutForm() {
                     <OrderTotalSummary
                       productsSubtotal={productsSubtotal}
                       freight={freight}
-                      selectedRegionName={selectedRegion?.name}
+                      selectedRegionName={
+                        deliveryMethod === "delivery"
+                          ? selectedRegion?.name
+                          : selectedShippingQuote?.service_name
+                      }
                       discountAmount={discountAmount}
                       discountCode={appliedCoupon?.code}
                       freeShipping={isFreeShippingCoupon}
-                      showFreight={deliveryMethod === "delivery"}
+                      showFreight={deliveryMethod !== "pickup"}
                       compact
                     />
                   </div>
@@ -962,7 +1050,9 @@ export function CheckoutForm() {
                     disabled={
                       isSubmitting ||
                       (deliveryMethod === "delivery" &&
-                        (loadingRegions || !selectedRegion))
+                        (loadingRegions || !selectedRegion)) ||
+                      (deliveryMethod === "shipping" &&
+                        (shippingLoading || !selectedShippingQuote))
                     }
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >
