@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
+import { Switch } from "@/components/ui/switch";
 import { Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -22,14 +23,14 @@ import {
 import { storePixPaymentForOrder } from "@/lib/pix-payment";
 import { DeliveryRegionField } from "@/components/delivery-region-field";
 import { OrderTotalSummary } from "@/components/order-total-summary";
-import { ShippingQuoteOptions } from "@/components/shipping-quote-options";
 import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
-import { useCorreiosQuote } from "@/hooks/use-correios-quote";
 import { isValidCep } from "@/lib/correios-freight";
 import {
   formatCurrency,
   parseRegionPrice,
 } from "@/lib/delivery-regions";
+
+const NATIONAL_SHIPPING_FLAT_FEE = 35;
 
 function resolveCreatedOrderId(data: {
   order_id?: string;
@@ -154,31 +155,11 @@ export function CheckoutForm() {
   const productsSubtotal = getTotalPrice();
   const selectedRegion = getRegionByName(formData.district);
 
-  const quoteItems = items
-    .filter((item) => item.pharmacyProductId)
-    .map((item) => ({
-      pharmacy_product_id: item.pharmacyProductId as string,
-      amount: item.quantity,
-    }));
-
-  const {
-    quotes: shippingQuotes,
-    loading: shippingLoading,
-    error: shippingError,
-    selectedCode: shippingServiceCode,
-    setSelectedCode: setShippingServiceCode,
-    selectedQuote: selectedShippingQuote,
-  } = useCorreiosQuote({
-    enabled: deliveryMethod === "shipping",
-    destinationCep: formData.zipCode,
-    items: quoteItems,
-  });
-
   const freight =
     deliveryMethod === "pickup"
       ? 0
       : deliveryMethod === "shipping"
-        ? (selectedShippingQuote?.price_cents ?? 0) / 100
+        ? NATIONAL_SHIPPING_FLAT_FEE
         : selectedRegion
           ? parseRegionPrice(selectedRegion.price)
           : 0;
@@ -432,15 +413,9 @@ export function CheckoutForm() {
       return;
     }
 
-    if (deliveryMethod === "shipping") {
-      if (!isValidCep(formData.zipCode)) {
-        alert("Informe um CEP válido para calcular o frete.");
-        return;
-      }
-      if (!selectedShippingQuote) {
-        alert("Selecione uma modalidade de envio dos Correios.");
-        return;
-      }
+    if (deliveryMethod === "shipping" && !isValidCep(formData.zipCode)) {
+      alert("Informe um CEP válido para o envio.");
+      return;
     }
 
     setIsSubmitting(true);
@@ -485,9 +460,6 @@ export function CheckoutForm() {
         phone: unmaskPhone(formData.phone),
         delivery_method: deliveryMethod,
         delivery_fee: freight,
-        ...(deliveryMethod === "shipping"
-          ? { shipping_service_code: selectedShippingQuote!.service_code }
-          : {}),
         ...(deliveryMethod !== "pickup"
           ? {
               address: {
@@ -809,7 +781,9 @@ export function CheckoutForm() {
                 selectedRegionName={
                   deliveryMethod === "delivery"
                     ? selectedRegion?.name
-                    : selectedShippingQuote?.service_name
+                    : deliveryMethod === "shipping"
+                      ? "Envio nacional"
+                      : undefined
                 }
                 discountAmount={discountAmount}
                 discountCode={appliedCoupon?.code}
@@ -840,16 +814,20 @@ export function CheckoutForm() {
                       [
                         { value: "delivery", label: "Entrega local (Porto Seguro)" },
                         { value: "pickup", label: "Retirar na loja" },
-                        { value: "shipping", label: "Envio nacional (Correios)" },
+                        { value: "shipping", label: "Envio nacional" },
                       ] as const
                     ).map((option) => (
-                      <label key={option.value} className="flex items-center gap-2 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="delivery-method"
-                          value={option.value}
+                      <label
+                        key={option.value}
+                        htmlFor={`delivery-method-${option.value}`}
+                        className="flex items-center gap-2 cursor-pointer"
+                      >
+                        <Switch
+                          id={`delivery-method-${option.value}`}
                           checked={deliveryMethod === option.value}
-                          onChange={() => setDeliveryMethod(option.value)}
+                          onCheckedChange={(checked) => {
+                            if (checked) setDeliveryMethod(option.value);
+                          }}
                         />
                         <span className="text-sm text-theme-primary">{option.label}</span>
                       </label>
@@ -973,18 +951,14 @@ export function CheckoutForm() {
                       </div>
 
                       {deliveryMethod === "shipping" && (
-                        <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 space-y-2">
+                        <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
                           <p className="text-xs sm:text-sm font-medium text-theme-primary">
-                            Frete — Correios
+                            Frete do envio nacional
                           </p>
-                          <ShippingQuoteOptions
-                            quotes={shippingQuotes}
-                            loading={shippingLoading}
-                            error={shippingError}
-                            cepFilled={isValidCep(formData.zipCode)}
-                            selectedCode={shippingServiceCode}
-                            onSelect={setShippingServiceCode}
-                          />
+                          <p className="text-xs sm:text-sm text-muted-foreground mt-1">
+                            Taxa fixa de {formatCurrency(NATIONAL_SHIPPING_FLAT_FEE)} para qualquer
+                            endereço no Brasil.
+                          </p>
                         </div>
                       )}
                     </>
@@ -1025,7 +999,9 @@ export function CheckoutForm() {
                       selectedRegionName={
                         deliveryMethod === "delivery"
                           ? selectedRegion?.name
-                          : selectedShippingQuote?.service_name
+                          : deliveryMethod === "shipping"
+                            ? "Envio nacional"
+                            : undefined
                       }
                       discountAmount={discountAmount}
                       discountCode={appliedCoupon?.code}
@@ -1050,9 +1026,7 @@ export function CheckoutForm() {
                     disabled={
                       isSubmitting ||
                       (deliveryMethod === "delivery" &&
-                        (loadingRegions || !selectedRegion)) ||
-                      (deliveryMethod === "shipping" &&
-                        (shippingLoading || !selectedShippingQuote))
+                        (loadingRegions || !selectedRegion))
                     }
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >

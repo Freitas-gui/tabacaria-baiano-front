@@ -32,6 +32,7 @@ type DeliveryRegionFieldProps = {
   required?: boolean;
   id?: string;
   label?: string;
+  hint?: string;
   selectClassName?: string;
   showPrice?: boolean;
 };
@@ -48,6 +49,7 @@ export function DeliveryRegionField({
   required = true,
   id = "delivery-region",
   label = "Região de entrega",
+  hint,
   selectClassName,
   showPrice = true,
 }: DeliveryRegionFieldProps) {
@@ -154,6 +156,9 @@ export function DeliveryRegionField({
           <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
             Nenhuma região de entrega disponível no momento.
           </p>
+        )}
+        {hint && (
+          <p className="mt-1 text-xs sm:text-sm text-muted-foreground">{hint}</p>
         )}
       </div>
     </div>

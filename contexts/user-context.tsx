@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react"
 import { API_BASE_URL } from "@/lib/api"
-import { parseUserFromApi, type ProfileUpdatePayload } from "@/lib/user-api"
+import { parseUserFromApi, type ProfileUpdatePayload, type RegisterPayload } from "@/lib/user-api"
 
 export interface Address {
   id: string
@@ -32,6 +32,7 @@ export interface User {
 interface UserContextType {
   user: User | null
   login: (email: string, password: string) => Promise<void>
+  register: (payload: RegisterPayload) => Promise<void>
   logout: () => void
   refreshUser: () => Promise<void>
   updateProfile: (payload: ProfileUpdatePayload) => Promise<void>
@@ -92,6 +93,44 @@ export function UserProvider({ children }: { children: ReactNode }) {
       console.log("User saved to localStorage")
     } catch (error) {
       console.error("Login error:", error)
+      throw error
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const register = async (payload: RegisterPayload) => {
+    setIsLoading(true)
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/customer/register`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        throw new Error(data.message || "Erro ao registrar. Tente novamente.")
+      }
+
+      const userDataFromAPI = data.data?.user
+
+      if (!userDataFromAPI) {
+        throw new Error("Invalid response: user data not found")
+      }
+
+      const userData = parseUserFromApi(
+        userDataFromAPI,
+        data.data?.access_token || "",
+      )
+
+      setUser(userData)
+      localStorage.setItem("user", JSON.stringify(userData))
+    } catch (error) {
+      console.error("Register error:", error)
       throw error
     } finally {
       setIsLoading(false)
@@ -173,6 +212,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
       value={{
         user,
         login,
+        register,
         logout,
         refreshUser,
         updateProfile,

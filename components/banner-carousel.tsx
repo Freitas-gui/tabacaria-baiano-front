@@ -84,7 +84,7 @@ export function BannerCarousel() {
     return null;
   }
 
-  const aspectClass = isMobile ? "aspect-[4/3]" : "aspect-[16/5]";
+  const aspectClass = isMobile ? "aspect-[4/3]" : "aspect-[1899/413]";
   const plugins =
     banners.length > 1 && !prefersReducedMotion
       ? [

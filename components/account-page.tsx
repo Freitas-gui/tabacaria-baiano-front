@@ -129,17 +129,11 @@ export function AccountPage() {
       !form.telefone ||
       !form.cidade ||
       !form.estado ||
-      !form.bairro ||
       !form.cep ||
       !form.rua ||
       !form.numero
     ) {
       setError("Preencha todos os campos obrigatórios.")
-      return
-    }
-
-    if (!regions.some((region) => region.name === form.bairro)) {
-      setError("Selecione uma região de entrega válida.")
       return
     }
 
@@ -279,7 +273,9 @@ export function AccountPage() {
           loading={loadingRegions}
           error={regionsError}
           disabled={loading}
+          required={false}
           showPrice={false}
+          hint="Esse campo é necessário apenas para quem faz pedidos com entrega local em Porto Seguro."
           selectClassName="px-4 py-2 border border-border rounded-lg bg-background text-foreground"
         />
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">

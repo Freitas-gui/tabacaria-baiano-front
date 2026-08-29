@@ -1,37 +1,23 @@
 "use client";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { API_BASE_URL } from "@/lib/api";
-import { DeliveryRegionField } from "@/components/delivery-region-field";
-import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
+import { useUser } from "@/contexts/user-context";
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { regions, loading: loadingRegions, error: regionsError } =
-    useDeliveryRegions();
+  const { register } = useUser();
   const [form, setForm] = useState({
     nome: "",
     telefone: "",
     email: "",
     senha: "",
     confirmacaoSenha: "",
-    cidade: "",
-    estado: "",
-    bairro: "",
-    cep: "",
-    rua: "",
-    numero: "",
-    complemento: "",
   });
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value });
-  };
-
-  const handleRegionChange = (regionName: string) => {
-    setForm({ ...form, bairro: regionName });
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -44,21 +30,9 @@ export default function RegisterPage() {
       !form.telefone ||
       !form.email ||
       !form.senha ||
-      !form.confirmacaoSenha ||
-      !form.cidade ||
-      !form.estado ||
-      !form.bairro ||
-      !form.cep ||
-      !form.rua ||
-      !form.numero
+      !form.confirmacaoSenha
     ) {
       setError("Preencha todos os campos obrigatórios.");
-      setLoading(false);
-      return;
-    }
-
-    if (!regions.some((region) => region.name === form.bairro)) {
-      setError("Selecione uma região de entrega válida.");
       setLoading(false);
       return;
     }
@@ -70,41 +44,17 @@ export default function RegisterPage() {
     }
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/customer/register`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          name: form.nome,
-          email: form.email,
-          password: form.senha,
-          password_confirmation: form.confirmacaoSenha,
-          phone: form.telefone,
-          address: {
-            street: form.rua,
-            street_number: form.numero,
-            postal_code: form.cep,
-            district: form.bairro,
-            city: form.cidade,
-            state: form.estado,
-            address_details: form.complemento || "",
-            is_default_address: true,
-          },
-        }),
+      await register({
+        name: form.nome,
+        email: form.email,
+        password: form.senha,
+        password_confirmation: form.confirmacaoSenha,
+        phone: form.telefone,
       });
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        setError(data.message || "Erro ao registrar. Tente novamente.");
-        setLoading(false);
-        return;
-      }
-
-      router.push("/login");
-    } catch (err) {
-      setError("Erro ao conectar com o servidor. Tente novamente.");
+      router.push("/");
+    } catch (err: any) {
+      setError(err?.message || "Erro ao registrar. Tente novamente.");
       setLoading(false);
     }
   };
@@ -177,81 +127,6 @@ export default function RegisterPage() {
             onChange={handleChange}
             className="w-full px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
             required
-            disabled={loading}
-          />
-          <div className="grid grid-cols-2 gap-4">
-            <input
-              name="cidade"
-              type="text"
-              placeholder="Cidade *"
-              value={form.cidade}
-              onChange={handleChange}
-              className="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
-              required
-              disabled={loading}
-            />
-            <input
-              name="estado"
-              type="text"
-              placeholder="Estado (UF) *"
-              value={form.estado}
-              onChange={handleChange}
-              className="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
-              required
-              disabled={loading}
-              maxLength={2}
-            />
-          </div>
-          <DeliveryRegionField
-            id="register-region"
-            regions={regions}
-            value={form.bairro}
-            onChange={handleRegionChange}
-            loading={loadingRegions}
-            error={regionsError}
-            disabled={loading}
-            showPrice={false}
-            selectClassName="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground shadow-sm"
-          />
-          <div className="grid grid-cols-3 gap-4">
-            <input
-              name="cep"
-              type="text"
-              placeholder="CEP *"
-              value={form.cep}
-              onChange={handleChange}
-              className="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
-              required
-              disabled={loading}
-            />
-            <input
-              name="rua"
-              type="text"
-              placeholder="Rua *"
-              value={form.rua}
-              onChange={handleChange}
-              className="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
-              required
-              disabled={loading}
-            />
-            <input
-              name="numero"
-              type="text"
-              placeholder="Número *"
-              value={form.numero}
-              onChange={handleChange}
-              className="px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
-              required
-              disabled={loading}
-            />
-          </div>
-          <input
-            name="complemento"
-            type="text"
-            placeholder="Complemento"
-            value={form.complemento}
-            onChange={handleChange}
-            className="w-full px-4 py-2 border border-white/10 rounded-lg bg-secondary text-foreground placeholder:text-muted-foreground shadow-sm"
             disabled={loading}
           />
           {error && (

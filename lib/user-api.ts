@@ -38,6 +38,14 @@ export function parseUserFromApi(
   }
 }
 
+export interface RegisterPayload {
+  name: string
+  email: string
+  password: string
+  password_confirmation: string
+  phone: string
+}
+
 export interface ProfileUpdatePayload {
   name: string
   phone: string
