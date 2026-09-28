@@ -11,6 +11,8 @@ type OrderTotalSummaryProps = {
   discountAmount?: number;
   discountCode?: string | null;
   freeShipping?: boolean;
+  /** Amount still missing to unlock the free-shipping promotion. */
+  freeShippingRemaining?: number;
   showFreight?: boolean;
 };
 
@@ -22,6 +24,7 @@ export function OrderTotalSummary({
   discountAmount = 0,
   discountCode,
   freeShipping = false,
+  freeShippingRemaining,
   showFreight = true,
 }: OrderTotalSummaryProps) {
   const effectiveFreight = freeShipping ? 0 : freight;
@@ -49,6 +52,8 @@ export function OrderTotalSummary({
                 </span>
                 Grátis
               </>
+            ) : freeShipping ? (
+              "Grátis"
             ) : freight > 0 ? (
               formatCurrency(freight)
             ) : (
@@ -56,6 +61,11 @@ export function OrderTotalSummary({
             )}
           </span>
         </div>
+      )}
+      {showFreight && freeShippingRemaining !== undefined && freeShippingRemaining > 0 && (
+        <p className="text-xs sm:text-sm text-green-600">
+          Faltam {formatCurrency(freeShippingRemaining)} para ganhar frete grátis.
+        </p>
       )}
       {discountAmount > 0 && (
         <div className="flex justify-between items-center text-sm sm:text-base">

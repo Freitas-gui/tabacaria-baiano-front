@@ -16,6 +16,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
+  ArrowLeft,
   Package,
   Clock,
   CheckCircle,
@@ -73,6 +74,8 @@ interface Order {
   total: string;
   productsSubtotal: number;
   deliveryFee: number;
+  /** Original fee waived by the free-shipping promotion, when it applied. */
+  freeShippingPromotionFee: number | null;
   discountAmount: number;
   couponCode?: string | null;
   couponDiscountType?: string | null;
@@ -132,6 +135,9 @@ function mapApiOrder(order: any): Order {
     : null;
 
   const deliveryFee = Number.parseFloat(order.delivery_fee || "0") || 0;
+  const freeShippingPromotionFee = order.free_shipping_promotion_fee
+    ? Number.parseFloat(order.free_shipping_promotion_fee) || 0
+    : null;
   const discountAmount = Number.parseFloat(order.discount_amount || "0") || 0;
   const productsSubtotal = items.reduce(
     (sum, item) =>
@@ -148,6 +154,7 @@ function mapApiOrder(order: any): Order {
     total: order.total || "0",
     productsSubtotal,
     deliveryFee,
+    freeShippingPromotionFee,
     discountAmount,
     couponCode: order.coupon_code ?? null,
     couponDiscountType: order.discount_type ?? null,
@@ -640,11 +647,14 @@ export function OrdersPage() {
 
                 <OrderTotalSummary
                   productsSubtotal={selectedOrder.productsSubtotal}
-                  freight={selectedOrder.deliveryFee}
+                  freight={selectedOrder.freeShippingPromotionFee ?? selectedOrder.deliveryFee}
                   selectedRegionName={selectedOrder.deliveryRegion ?? undefined}
                   discountAmount={selectedOrder.discountAmount}
                   discountCode={selectedOrder.couponCode ?? undefined}
-                  freeShipping={selectedOrder.couponDiscountType === "free_shipping"}
+                  freeShipping={
+                    selectedOrder.couponDiscountType === "free_shipping" ||
+                    selectedOrder.freeShippingPromotionFee !== null
+                  }
                   showFreight={selectedOrder.deliveryMethod === "delivery"}
                 />
               </CardContent>
@@ -773,9 +783,23 @@ export function OrdersPage() {
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
       <div className="mb-6 sm:mb-8">
-        <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary mb-2">
-          Meus Pedidos
-        </h1>
+        <div className="flex items-center gap-2 sm:gap-3 mb-2">
+          <button
+            type="button"
+            onClick={() => {
+              router.push("/");
+              window.scrollTo(0, 0);
+            }}
+            className="flex-shrink-0 flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-muted-foreground hover:text-theme-primary hover:bg-muted/60 transition-colors"
+            aria-label="Voltar para a tela inicial"
+            title="Voltar para a tela inicial"
+          >
+            <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+          </button>
+          <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary">
+            Meus Pedidos
+          </h1>
+        </div>
         <p className="text-sm sm:text-base text-muted-foreground">
           Acompanhe o status dos seus pedidos
         </p>

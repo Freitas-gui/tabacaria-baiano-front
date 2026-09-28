@@ -1,8 +1,6 @@
 "use client";
 
 import { useState } from "react";
-import Image from "next/image";
-import Link from "next/link";
 import { Instagram, Linkedin, MapPin, MessageCircle } from "lucide-react";
 import { PolicyDialog } from "@/components/policy-dialog";
 import { DEVELOPER_CREDIT } from "@/lib/developer-credit";
@@ -29,16 +27,6 @@ export function Footer() {
     <>
       <footer className="footer-site mt-8 sm:mt-16">
         <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-12">
-          <Link href="/" className="block mb-8 sm:mb-12 overflow-hidden rounded-2xl">
-            <Image
-              src="/logo-footer.png"
-              alt="Tabacaria do Baiano"
-              width={2172}
-              height={724}
-              className="h-auto w-full"
-            />
-          </Link>
-
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div>
               <p className="text-sm opacity-90 mb-2">{STORE_INFO.tagline}</p>

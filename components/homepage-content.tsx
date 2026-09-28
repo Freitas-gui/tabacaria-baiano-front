@@ -6,8 +6,7 @@ import { Search } from "lucide-react";
 import { BannerCarousel } from "@/components/banner-carousel";
 import Image from "next/image";
 import { useSearchParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useCart } from "@/contexts/cart-context";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { API_BASE_URL } from "@/lib/api";
 import { resolveCdnUrl } from "@/lib/cdn";
 import { extractProductImageUrls } from "@/lib/product-images";
@@ -49,15 +48,13 @@ function formatPriceBRL(value: string | number | null | undefined) {
   const n =
     typeof value === "number" ? value : Number(String(value).replace(",", "."));
   if (Number.isNaN(n)) return String(value);
+  if (Number.isInteger(n)) return String(n); // ex: 15.0 -> "15"
   return n.toFixed(2).replace(".", ","); // ex: 15.5 -> "15,50"
 }
 
 export function HomepageContent() {
   const searchParams = useSearchParams();
   const router = useRouter();
-  const { addToCart, items } = useCart();
-  const stockCache = useRef<Record<string, number | null>>({});
-
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [selectedParentId, setSelectedParentId] = useState<string | null>(
     null,
@@ -173,33 +170,6 @@ export function HomepageContent() {
       setLoadingProducts(false);
     }
   }, []);
-
-  const fetchStockForProduct = useCallback(
-    async (pharmacyProductId: string): Promise<number | null> => {
-      if (pharmacyProductId in stockCache.current) {
-        return stockCache.current[pharmacyProductId];
-      }
-      try {
-        const res = await fetch(
-          `${API_BASE_URL}/api/product/show/${pharmacyProductId}`,
-        );
-        if (res.ok && res.status !== 204) {
-          const json = await res.json();
-          const data = json.data || json;
-          const stock =
-            data?.stock !== undefined && data?.stock !== null
-              ? Number(data.stock)
-              : null;
-          stockCache.current[pharmacyProductId] = stock;
-          return stock;
-        }
-      } catch {
-      }
-      stockCache.current[pharmacyProductId] = null;
-      return null;
-    },
-    [],
-  );
 
   useEffect(() => {
     const ac = new AbortController();
@@ -446,16 +416,9 @@ export function HomepageContent() {
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2 sm:gap-4 lg:gap-6 [&>*]:min-w-0">
             {Array.from({ length: 10 }).map((_, i) => (
               <Card key={i} className="card-static min-w-0 animate-pulse overflow-hidden p-2 sm:p-4">
-                <div className="w-full aspect-square bg-muted mb-2 sm:mb-4 rounded" />
+                <div className="w-full aspect-square bg-muted mb-4 sm:mb-6 rounded" />
                 <div className="h-3 sm:h-4 w-3/4 bg-muted mb-2 sm:mb-3" />
-                <div className="space-y-1 sm:space-y-2 mb-2 sm:mb-4">
-                  <div className="h-2 sm:h-3 w-1/3 bg-muted" />
-                  <div className="h-4 sm:h-5 w-1/2 bg-muted" />
-                </div>
-                <div className="flex min-w-0 gap-1 sm:gap-2">
-                  <div className="h-8 min-w-0 flex-1 bg-muted sm:h-9" />
-                  <div className="h-8 w-9 shrink-0 bg-muted sm:h-9 sm:w-10" />
-                </div>
+                <div className="h-4 sm:h-5 w-1/2 bg-muted" />
               </Card>
             ))}
           </div>
@@ -464,9 +427,10 @@ export function HomepageContent() {
             {filteredProducts.map((product) => (
               <Card
                 key={product.id}
-                className="flex min-w-0 flex-col overflow-hidden p-2 sm:p-4"
+                onClick={() => handleProductClick(product)}
+                className="flex min-w-0 cursor-pointer flex-col overflow-hidden p-2 sm:p-4"
               >
-                <div className="relative mb-2 aspect-square flex-shrink-0 overflow-hidden rounded-md bg-muted sm:mb-4">
+                <div className="relative mb-4 aspect-square flex-shrink-0 overflow-hidden rounded-md bg-muted sm:mb-6">
                   <Image
                     src={resolveCdnUrl(product.image) || "/images/products/"}
                     alt={product.name}
@@ -477,77 +441,16 @@ export function HomepageContent() {
                   />
                 </div>
 
-                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-2 sm:mb-3 line-clamp-2 min-h-[2rem] sm:min-h-[2.5rem] flex-shrink-0">
+                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-0.5 sm:mb-1 line-clamp-2 flex-shrink-0">
                   {product.name}
                 </h3>
 
-                <div className="space-y-1 sm:space-y-2 mb-2 sm:mb-4 flex-shrink-0">
-                  <div className="text-xs sm:text-sm text-muted-foreground">
-                    A partir de
-                  </div>
+                <div className="space-y-1 sm:space-y-2 flex-shrink-0">
                   <div className="price text-lg sm:text-xl">
                     {product.price
                       ? `R$ ${formatPriceBRL(product.price)}`
                       : "Preço indisponível"}
                   </div>
-                </div>
-
-                <div className="mt-auto flex min-w-0 w-full gap-1 sm:gap-2">
-                  <Button
-                    onClick={() => handleProductClick(product)}
-                    className="h-9 min-w-0 flex-1 truncate px-1.5 text-[10px] btn-theme-primary button-hover sm:h-10 sm:px-3 sm:text-sm"
-                  >
-                    COMPRAR
-                  </Button>
-                  <Button
-                    onClick={async () => {
-                      if (product.variations.length > 0) {
-                        handleProductClick(product);
-                        return;
-                      }
-
-                      let resolvedStock: number | null = product.stock ?? null;
-
-                      if (resolvedStock === null && product.pharmacyProductId) {
-                        resolvedStock = await fetchStockForProduct(
-                          product.pharmacyProductId,
-                        );
-                      }
-
-                      if (resolvedStock !== null && resolvedStock <= 0) {
-                        return;
-                      }
-
-                      if (resolvedStock !== null) {
-                        const existing = items.find(
-                          (item) =>
-                            item.pharmacyProductId === product.pharmacyProductId &&
-                            !item.variationOptionId &&
-                            !item.variationOptionName,
-                        );
-                        if (existing && existing.quantity >= resolvedStock) {
-                          return;
-                        }
-                      }
-
-                      addToCart({
-                        id: `${product.id}-${Date.now()}`,
-                        name: product.name,
-                        price: product.price ?? "0",
-                        image:
-                          resolveCdnUrl(product.image) || "/images/products/",
-                        pharmacyProductId: product.pharmacyProductId || null,
-                        stock: resolvedStock,
-                        variationOptionId: null,
-                        variationOptionName: null,
-                        variationTypeName: null,
-                      });
-                    }}
-                    className="h-9 w-9 shrink-0 p-0 btn-theme-secondary button-hover text-sm sm:h-10 sm:w-10 sm:text-base sm:py-2"
-                    title="Adicionar ao carrinho"
-                  >
-                    +
-                  </Button>
                 </div>
               </Card>
             ))}

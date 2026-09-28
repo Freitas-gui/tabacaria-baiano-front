@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 import { resolveCdnUrl } from "@/lib/cdn";
 import { extractProductImageUrls } from "@/lib/product-images";
@@ -40,6 +40,15 @@ type Product = {
   additionalImages: string[];
   keywords?: string[];
 };
+
+function formatPriceBRL(value: string | number | null | undefined) {
+  if (value === null || value === undefined || value === "") return "";
+  const n =
+    typeof value === "number" ? value : Number(String(value).replace(",", "."));
+  if (Number.isNaN(n)) return String(value);
+  if (Number.isInteger(n)) return String(n); // ex: 15.0 -> "15"
+  return n.toFixed(2).replace(".", ","); // ex: 15.5 -> "15,50"
+}
 
 // Default product as fallback
 const defaultProduct: Product & {
@@ -371,6 +380,7 @@ export function ProductDetail({ slug }: { slug: string }) {
       name: product.name,
       price: product.price ?? "",
       image: product.image || "/placeholder.svg?height=400&width=400",
+      slug: product.slug || null,
       pharmacyProductId: product.pharmacyProductId || null,
       pharmacyName: currentPharmacy?.name || null,
       stock: availableStock,
@@ -410,6 +420,7 @@ export function ProductDetail({ slug }: { slug: string }) {
       name: product.name,
       price: product.price ?? "",
       image: product.image || "/placeholder.svg?height=400&width=400",
+      slug: product.slug || null,
       pharmacyProductId: product.pharmacyProductId || null,
       pharmacyName: currentPharmacy?.name || null,
       stock: availableStock,
@@ -515,16 +526,27 @@ export function ProductDetail({ slug }: { slug: string }) {
         {/* Info: name, price, buttons (mobile order-1, desktop right column) */}
         <div className="order-1 lg:order-2 lg:col-span-6">
           <div className="space-y-3 sm:space-y-4">
-            <h1 className="text-xl sm:text-2xl font-semibold text-theme-primary">
-              {product.name}
-            </h1>
+            <div className="flex items-center gap-2 sm:gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  router.push("/");
+                  window.scrollTo(0, 0);
+                }}
+                className="flex-shrink-0 flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-muted-foreground hover:text-theme-primary hover:bg-muted/60 transition-colors"
+                aria-label="Voltar para a tela inicial"
+                title="Voltar para a tela inicial"
+              >
+                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+              </button>
+              <h1 className="text-xl sm:text-2xl font-semibold text-theme-primary">
+                {product.name}
+              </h1>
+            </div>
 
             <div className="bg-[var(--bg-secondary)] p-3 sm:p-4 rounded-[14px] border border-border">
               <div className="price text-2xl sm:text-3xl">
-                R{"$ "}
-                {typeof product.price === "string"
-                  ? product.price.replace(".", ",")
-                  : product.price}
+                R$ {formatPriceBRL(product.price)}
               </div>
             </div>
 
@@ -696,7 +718,11 @@ export function ProductDetail({ slug }: { slug: string }) {
         {!loadingProducts && !productsError && relatedProducts.length > 0 && (
           <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
             {relatedProducts.map((relatedProduct) => (
-              <Card key={relatedProduct.id} className="flex flex-col">
+              <Card
+                key={relatedProduct.id}
+                onClick={() => handleRelatedProductClick(relatedProduct)}
+                className="flex cursor-pointer flex-col"
+              >
                 <ProductImageFrame
                   src={
                     relatedProduct.image ||
@@ -704,44 +730,19 @@ export function ProductDetail({ slug }: { slug: string }) {
                   }
                   alt={relatedProduct.name}
                   variant="related"
-                  frameClassName="mb-2 sm:mb-4 flex-shrink-0"
+                  frameClassName="mb-4 sm:mb-6 flex-shrink-0"
                 />
 
-                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-2 line-clamp-2 min-h-[2.5rem] flex-shrink-0">
+                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-0.5 sm:mb-1 line-clamp-2 flex-shrink-0">
                   {relatedProduct.name}
                 </h3>
 
                 <div className="space-y-1 flex-shrink-0">
                   <div className="price text-base sm:text-lg">
-                    {relatedProduct.price ? `R$ ${relatedProduct.price}` : "—"}
+                    {relatedProduct.price
+                      ? `R$ ${formatPriceBRL(relatedProduct.price)}`
+                      : "—"}
                   </div>
-                </div>
-
-                <div className="flex space-x-1 sm:space-x-2 mt-3">
-                  <Button
-                    onClick={() => handleRelatedProductClick(relatedProduct)}
-                    className="flex-1 btn-theme-primary text-xs sm:text-sm py-1 sm:py-2"
-                  >
-                    DETALHES
-                  </Button>
-                  <Button
-                    onClick={() =>
-                      addToCart({
-                        id: `${relatedProduct.id}-${Date.now()}`,
-                        name: relatedProduct.name,
-                        price: relatedProduct.price ?? "",
-                        image:
-                          relatedProduct.image ||
-                          "/placeholder.svg?height=200&width=200",
-                        pharmacyProductId:
-                          relatedProduct.pharmacyProductId || null,
-                      })
-                    }
-                    className="btn-theme-secondary text-xs sm:text-sm px-2 sm:px-3 py-1 sm:py-2"
-                    title="Adicionar ao carrinho"
-                  >
-                    +
-                  </Button>
                 </div>
               </Card>
             ))}

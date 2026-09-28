@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react"
 import { useRouter } from "next/navigation"
+import { ArrowLeft } from "lucide-react"
 import type { ProfileUpdatePayload } from "@/lib/user-api"
 import { useUser } from "@/contexts/user-context"
 import { DeliveryRegionField } from "@/components/delivery-region-field"
@@ -180,9 +181,23 @@ export function AccountPage() {
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-10 max-w-lg">
-      <h1 className="text-xl sm:text-2xl font-bold text-foreground mb-2">
-        Minha conta
-      </h1>
+      <div className="flex items-center gap-2 sm:gap-3 mb-2">
+        <button
+          type="button"
+          onClick={() => {
+            router.push("/")
+            window.scrollTo(0, 0)
+          }}
+          className="flex-shrink-0 flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors"
+          aria-label="Voltar para a tela inicial"
+          title="Voltar para a tela inicial"
+        >
+          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+        <h1 className="text-xl sm:text-2xl font-bold text-foreground">
+          Minha conta
+        </h1>
+      </div>
       <p className="text-sm text-muted-foreground mb-6">
         Atualize seus dados pessoais e endereço de entrega.
       </p>

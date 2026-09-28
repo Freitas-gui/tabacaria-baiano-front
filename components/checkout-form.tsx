@@ -10,11 +10,13 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import { Minus, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Minus, Plus } from "lucide-react";
 import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { API_BASE_URL } from "@/lib/api";
 import { resolveCdnUrl } from "@/lib/cdn";
+import { getProductPath } from "@/lib/product-slug";
 import {
   formatBrazilianPhone,
   isValidBrazilianPhone,
@@ -24,6 +26,7 @@ import { storePixPaymentForOrder } from "@/lib/pix-payment";
 import { DeliveryRegionField } from "@/components/delivery-region-field";
 import { OrderTotalSummary } from "@/components/order-total-summary";
 import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
+import { useFreeShippingPromotion } from "@/hooks/use-free-shipping-promotion";
 import { isValidCep } from "@/lib/correios-freight";
 import {
   formatCurrency,
@@ -50,8 +53,7 @@ function resolveCreatedOrderId(data: {
 }
 
 export function CheckoutForm() {
-  const { items, updateQuantity, removeFromCart, getTotalPrice, clearCart } =
-    useCart();
+  const { items, updateQuantity, getTotalPrice, clearCart } = useCart();
   const { user } = useUser();
   const router = useRouter();
   const { regions, loading: loadingRegions, error: regionsError, getRegionByName } =
@@ -165,8 +167,24 @@ export function CheckoutForm() {
           : 0;
   const discountAmount = appliedCoupon ? appliedCoupon.discountAmount / 100 : 0;
   const isFreeShippingCoupon = appliedCoupon?.discountType === "free_shipping";
-  const effectiveFreight = isFreeShippingCoupon ? 0 : freight;
-  const orderTotal = Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
+
+  // Preview of the free-shipping promotion; the backend recalculates it on order creation.
+  const freeShippingPromotion = useFreeShippingPromotion();
+  const promotionCoversMethod =
+    freeShippingPromotion.active &&
+    deliveryMethod !== "pickup" &&
+    freeShippingPromotion.deliveryMethods.includes(deliveryMethod);
+  const promotionShortfall = promotionCoversMethod
+    ? Math.max(
+        0,
+        (freeShippingPromotion.minOrderAmountCents ?? 0) -
+          Math.round((productsSubtotal - discountAmount) * 100),
+      ) / 100
+    : 0;
+  const isFreeShippingPromotion = promotionCoversMethod && promotionShortfall === 0;
+  const isFreeShipping = isFreeShippingCoupon || isFreeShippingPromotion;
+  const freeShippingRemaining =
+    promotionCoversMethod && !isFreeShipping ? promotionShortfall : undefined;
 
   const fetchProductInfo = useCallback(
     async (
@@ -568,32 +586,52 @@ export function CheckoutForm() {
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-      <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary mb-4 sm:mb-8">
-        Finalizar Compra
-      </h1>
+      <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-8">
+        <button
+          type="button"
+          onClick={() => {
+            router.push("/");
+            window.scrollTo(0, 0);
+          }}
+          className="flex-shrink-0 flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-muted-foreground hover:text-theme-primary hover:bg-muted/60 transition-colors"
+          aria-label="Voltar para a tela inicial"
+          title="Voltar para a tela inicial"
+        >
+          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+        </button>
+        <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary">
+          Finalizar Compra
+        </h1>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mt-4 sm:mt-8">
         {/* Cart Items */}
         <div>
           <Card className="card-static">
-            <CardHeader className="p-3 sm:p-6">
-              <CardTitle className="text-base sm:text-lg text-theme-primary">
-                Seus Produtos ({items.length} itens)
-              </CardTitle>
-            </CardHeader>
             <CardContent className="p-3 sm:p-6">
               <div className="space-y-3 sm:space-y-4">
-                {items.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-col sm:flex-row items-start sm:items-center gap-3 sm:gap-4 p-3 sm:p-4 border rounded"
-                  >
-                    <div className="flex items-center gap-3 w-full sm:w-auto">
-                      <div className="text-xs text-gray-500 w-6 sm:w-8 flex-shrink-0">
-                        #{index + 1}
-                      </div>
+                {items.map((item) => (
+                  <div key={item.id} className="p-3 sm:p-4 border rounded">
+                    <Link
+                      href={getProductPath(item)}
+                      className="block font-medium text-theme-primary text-xs sm:text-sm line-clamp-2 hover:underline"
+                    >
+                      {item.name}
+                    </Link>
+                    {item.variationOptionName && (
+                      <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
+                        {item.variationTypeName
+                          ? `${item.variationTypeName}: `
+                          : ""}
+                        {item.variationOptionName}
+                      </span>
+                    )}
 
-                      <div className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden">
+                    <div className="flex items-center gap-3 mt-2">
+                      <Link
+                        href={getProductPath(item)}
+                        className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden"
+                      >
                         <Image
                           src={
                             resolveCdnUrl(item.image) ||
@@ -608,120 +646,76 @@ export function CheckoutForm() {
                             target.src = "/placeholder.svg?height=80&width=80";
                           }}
                         />
-                      </div>
+                      </Link>
 
-                      <div className="flex-1 min-w-0">
-                        <h3 className="font-medium text-theme-primary text-xs sm:text-sm line-clamp-2">
-                          {item.name}
-                        </h3>
-                        <p className="text-base sm:text-lg font-bold text-theme-primary">
-                          R$ {item.price}
-                        </p>
-                        <p className="text-xs sm:text-sm text-theme-secondary">
-                          Quantidade: {item.quantity}
+                      <div className="flex flex-1 min-w-0 items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <p className="text-base sm:text-lg font-bold text-theme-primary">
+                            R$ {item.price}
+                          </p>
+                          <p className="text-xs sm:text-sm font-semibold text-theme-secondary">
+                            Subtotal: R${" "}
+                            {(
+                              Number.parseFloat(item.price.replace(",", ".")) *
+                              item.quantity
+                            )
+                              .toFixed(2)
+                              .replace(".", ",")}
+                          </p>
+                        </div>
+
+                        <div className="flex flex-shrink-0 items-center space-x-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() =>
+                              updateQuantity(item.id, item.quantity - 1)
+                            }
+                            className="text-theme-secondary hover:bg-muted h-8 w-8 p-0"
+                          >
+                            <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
+                          </Button>
+                          <span className="w-6 sm:w-8 text-center text-sm">
+                            {item.quantity}
+                          </span>
                           {(() => {
                             const availableStock =
                               productStocks[item.id] ??
                               (item as CartItem & { stock?: number | null })
                                 .stock;
-                            if (
+                            const maxQuantity =
                               availableStock !== undefined &&
                               availableStock !== null
-                            ) {
-                              return ` / Estoque: ${availableStock}`;
-                            }
-                            return "";
+                                ? availableStock
+                                : Infinity;
+                            const isMaxReached = item.quantity >= maxQuantity;
+                            return (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  if (!isMaxReached) {
+                                    updateQuantity(item.id, item.quantity + 1);
+                                  } else {
+                                    alert(
+                                      `Estoque máximo disponível: ${maxQuantity}`,
+                                    );
+                                  }
+                                }}
+                                disabled={isMaxReached}
+                                className="text-theme-secondary hover:bg-muted h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                                title={
+                                  isMaxReached
+                                    ? `Estoque máximo: ${maxQuantity}`
+                                    : "Aumentar quantidade"
+                                }
+                              >
+                                <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                              </Button>
+                            );
                           })()}
-                        </p>
-                        {(item.pharmacyName || pharmacyNames[item.id]) && (
-                          <p className="text-xs sm:text-sm text-theme-secondary mt-1">
-                            Loja: {item.pharmacyName || pharmacyNames[item.id]}
-                          </p>
-                        )}
-                        {loadingPharmacyNames[item.id] &&
-                          !item.pharmacyName &&
-                          !pharmacyNames[item.id] && (
-                            <p className="text-xs sm:text-sm text-gray-400 mt-1">
-                              Carregando loja...
-                            </p>
-                          )}
-                        {item.variationOptionName && (
-                          <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
-                            {item.variationTypeName
-                              ? `${item.variationTypeName}: `
-                              : ""}
-                            {item.variationOptionName}
-                          </span>
-                        )}
-                        <p className="text-xs sm:text-sm font-semibold text-theme-secondary mt-1">
-                          Subtotal: R${" "}
-                          {(
-                            Number.parseFloat(item.price.replace(",", ".")) *
-                            item.quantity
-                          )
-                            .toFixed(2)
-                            .replace(".", ",")}
-                        </p>
+                        </div>
                       </div>
-                    </div>
-
-                    <div className="flex items-center space-x-2 w-full sm:w-auto justify-end sm:justify-start">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() =>
-                          updateQuantity(item.id, item.quantity - 1)
-                        }
-                        className="text-theme-secondary hover:bg-muted h-8 w-8 p-0"
-                      >
-                        <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </Button>
-                      <span className="w-6 sm:w-8 text-center text-sm">
-                        {item.quantity}
-                      </span>
-                      {(() => {
-                        const availableStock =
-                          productStocks[item.id] ??
-                          (item as CartItem & { stock?: number | null }).stock;
-                        const maxQuantity =
-                          availableStock !== undefined &&
-                          availableStock !== null
-                            ? availableStock
-                            : Infinity;
-                        const isMaxReached = item.quantity >= maxQuantity;
-                        return (
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              if (!isMaxReached) {
-                                updateQuantity(item.id, item.quantity + 1);
-                              } else {
-                                alert(
-                                  `Estoque máximo disponível: ${maxQuantity}`,
-                                );
-                              }
-                            }}
-                            disabled={isMaxReached}
-                            className="text-theme-secondary hover:bg-muted h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                            title={
-                              isMaxReached
-                                ? `Estoque máximo: ${maxQuantity}`
-                                : "Aumentar quantidade"
-                            }
-                          >
-                            <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </Button>
-                        );
-                      })()}
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => removeFromCart(item.id)}
-                        className="text-red-500 hover:text-red-700 border-red-300 hover:bg-red-50 h-8 w-8 p-0"
-                      >
-                        <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
-                      </Button>
                     </div>
                   </div>
                 ))}
@@ -787,7 +781,8 @@ export function CheckoutForm() {
                 }
                 discountAmount={discountAmount}
                 discountCode={appliedCoupon?.code}
-                freeShipping={isFreeShippingCoupon}
+                freeShipping={isFreeShipping}
+                freeShippingRemaining={freeShippingRemaining}
                 showFreight={deliveryMethod !== "pickup"}
               />
             </CardContent>
@@ -959,6 +954,12 @@ export function CheckoutForm() {
                             Taxa fixa de {formatCurrency(NATIONAL_SHIPPING_FLAT_FEE)} para qualquer
                             endereço no Brasil.
                           </p>
+                          {promotionCoversMethod && freeShippingPromotion.minOrderAmountCents && (
+                            <p className="text-xs sm:text-sm text-green-600 mt-1">
+                              Grátis em compras a partir de{" "}
+                              {formatCurrency(freeShippingPromotion.minOrderAmountCents / 100)}.
+                            </p>
+                          )}
                         </div>
                       )}
                     </>
@@ -1005,20 +1006,11 @@ export function CheckoutForm() {
                       }
                       discountAmount={discountAmount}
                       discountCode={appliedCoupon?.code}
-                      freeShipping={isFreeShippingCoupon}
+                      freeShipping={isFreeShipping}
+                      freeShippingRemaining={freeShippingRemaining}
                       showFreight={deliveryMethod !== "pickup"}
                       compact
                     />
-                  </div>
-
-                  <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
-                    <p className="text-xs sm:text-sm font-medium text-theme-primary">
-                      Pagamento via PIX
-                    </p>
-                    <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                      Após finalizar, você receberá o QR Code e o código copia e
-                      cola para pagar no app do seu banco.
-                    </p>
                   </div>
 
                   <Button
@@ -1030,9 +1022,7 @@ export function CheckoutForm() {
                     }
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >
-                    {isSubmitting
-                      ? "Processando..."
-                      : `Finalizar Compra - ${formatCurrency(orderTotal)} (${items.length} produtos)`}
+                    {isSubmitting ? "Processando..." : "Finalizar Compra"}
                   </Button>
                 </form>
               </CardContent>

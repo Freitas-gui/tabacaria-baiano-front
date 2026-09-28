@@ -2,6 +2,19 @@
 @tailwind components;
 @tailwind utilities;
 
+/* The sticky header's categories nav animates its own height when it opens
+   or closes. Without this, the browser's scroll anchoring feature "corrects"
+   window.scrollY to compensate for that height change (since it happens
+   above the viewport's visible content), which the header's scroll listener
+   then misreads as the user scrolling — causing the categories menu to
+   flicker open/closed on a light scroll. Scroll anchoring only matters for
+   unannounced content shifts (e.g. slow-loading images); disabling it site-
+   wide removes that false signal at the source instead of filtering it out
+   with timers/thresholds. */
+html {
+  overflow-anchor: none;
+}
+
 :root {
   --bg-primary: #f7f3ee;
   --bg-secondary: #efe7dd;

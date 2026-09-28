@@ -9,6 +9,7 @@ interface CartItem {
   price: string
   image: string
   quantity: number
+  slug?: string | null
   pharmacyProductId?: string | null
   pharmacyName?: string | null
   stock?: number | null
