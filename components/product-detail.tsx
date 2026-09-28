@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
-import { ArrowLeft, ChevronLeft, ChevronRight } from "lucide-react";
+import { ChevronLeft, ChevronRight } from "lucide-react";
 import { API_BASE_URL } from "@/lib/api";
 import { resolveCdnUrl } from "@/lib/cdn";
 import { extractProductImageUrls } from "@/lib/product-images";
@@ -523,26 +523,143 @@ export function ProductDetail({ slug }: { slug: string }) {
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8">
-        {/* Info: name, price, buttons (mobile order-1, desktop right column) */}
-        <div className="order-1 lg:order-2 lg:col-span-6">
+        {/* Thumbnails: vertical column on desktop */}
+        <div className="hidden lg:block lg:col-span-2">
+          <div className="space-y-2">
+            {productImages.map((imageUrl, index) => (
+              <ProductImageFrame
+                key={index}
+                src={imageUrl || "/placeholder.svg"}
+                alt={`Miniatura ${index + 1} de ${product.name}`}
+                variant="thumb"
+                onClick={() => setSelectedImageIndex(index)}
+                frameClassName={
+                  selectedImageIndex === index
+                    ? "border-theme-accent ring-2 ring-theme-accent"
+                    : "hover:border-theme-accent"
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Thumbnails: horizontal row on mobile, first element of the page */}
+        <div className="lg:hidden">
+          <div className="flex space-x-2 overflow-x-auto pb-2">
+            {productImages.map((imageUrl, index) => (
+              <ProductImageFrame
+                key={index}
+                src={imageUrl || "/placeholder.svg"}
+                alt={`Miniatura ${index + 1} de ${product.name}`}
+                variant="thumb-mobile"
+                onClick={() => setSelectedImageIndex(index)}
+                frameClassName={
+                  selectedImageIndex === index
+                    ? "border-theme-accent ring-2 ring-theme-accent"
+                    : "hover:border-theme-accent"
+                }
+              />
+            ))}
+          </div>
+        </div>
+
+        {/* Main image */}
+        <div className="lg:col-span-5">
+          <div
+            className="relative max-w-sm mx-auto lg:max-w-none select-none"
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={() => {
+              dragStartX.current = null;
+              isDragging.current = false;
+            }}
+          >
+            <ProductImageFrame
+              src={productImages[selectedImageIndex] || "/placeholder.svg"}
+              alt={product.name}
+              variant="main"
+              priority
+              draggable={false}
+              className="pointer-events-none"
+            />
+            {productImages.length > 1 && (
+              <>
+                <button
+                  onClick={goToPrevImage}
+                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/25 backdrop-blur-sm border border-white/30 text-gray-700 hover:bg-white/60 hover:scale-110 hover:shadow-md active:scale-95 transition-all duration-200"
+                  aria-label="Imagem anterior"
+                >
+                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.75]" />
+                </button>
+                <button
+                  onClick={goToNextImage}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/25 backdrop-blur-sm border border-white/30 text-gray-700 hover:bg-white/60 hover:scale-110 hover:shadow-md active:scale-95 transition-all duration-200"
+                  aria-label="Próxima imagem"
+                >
+                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.75]" />
+                </button>
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex items-center gap-1.5 z-10">
+                  {productImages.map((_, i) => (
+                    <button
+                      key={i}
+                      onClick={() => setSelectedImageIndex(i)}
+                      aria-label={`Ir para imagem ${i + 1}`}
+                      className={`rounded-full transition-all duration-200 ${
+                        i === selectedImageIndex
+                          ? "w-4 h-2 bg-gray-700"
+                          : "w-2 h-2 bg-gray-400/70 hover:bg-gray-500"
+                      }`}
+                    />
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+
+        {/* Info: breadcrumb, name, price, buttons */}
+        <div className="lg:col-span-5">
           <div className="space-y-3 sm:space-y-4">
-            <div className="flex items-center gap-2 sm:gap-3">
+            <nav
+              aria-label="Navegação"
+              className="flex items-center gap-2 text-xs sm:text-sm text-muted-foreground"
+            >
               <button
                 type="button"
                 onClick={() => {
                   router.push("/");
                   window.scrollTo(0, 0);
                 }}
-                className="flex-shrink-0 flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-muted-foreground hover:text-theme-primary hover:bg-muted/60 transition-colors"
-                aria-label="Voltar para a tela inicial"
-                title="Voltar para a tela inicial"
+                className="hover:text-theme-primary transition-colors"
               >
-                <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+                Voltar
               </button>
-              <h1 className="text-xl sm:text-2xl font-semibold text-theme-primary">
-                {product.name}
-              </h1>
-            </div>
+              {product.category && (
+                <>
+                  <span aria-hidden="true">|</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      router.push(
+                        `/?category=${encodeURIComponent(product.category ?? "")}`,
+                      );
+                      window.scrollTo(0, 0);
+                    }}
+                    className="text-theme-secondary hover:underline"
+                  >
+                    {product.category}
+                  </button>
+                </>
+              )}
+            </nav>
+
+            <h1 className="text-xl sm:text-2xl font-semibold text-theme-primary">
+              {product.name}
+            </h1>
 
             <div className="bg-[var(--bg-secondary)] p-3 sm:p-4 rounded-[14px] border border-border">
               <div className="price text-2xl sm:text-3xl">
@@ -620,49 +737,6 @@ export function ProductDetail({ slug }: { slug: string }) {
           </div>
         </div>
 
-        {/* Image carousel (mobile order-2, desktop left column) */}
-        <div className="order-2 lg:order-1 lg:col-span-6">
-          <div
-            className="relative max-w-sm mx-auto lg:max-w-none select-none"
-            onTouchStart={handleTouchStart}
-            onTouchMove={handleTouchMove}
-            onTouchEnd={handleTouchEnd}
-            onMouseDown={handleMouseDown}
-            onMouseMove={handleMouseMove}
-            onMouseUp={handleMouseUp}
-            onMouseLeave={() => {
-              dragStartX.current = null;
-              isDragging.current = false;
-            }}
-          >
-            <ProductImageFrame
-              src={productImages[selectedImageIndex] || "/placeholder.svg"}
-              alt={product.name}
-              variant="main"
-              priority
-              draggable={false}
-              className="pointer-events-none"
-            />
-            {productImages.length > 1 && (
-              <>
-                <button
-                  onClick={goToPrevImage}
-                  className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/25 backdrop-blur-sm border border-white/30 text-gray-700 hover:bg-white/60 hover:scale-110 hover:shadow-md active:scale-95 transition-all duration-200"
-                  aria-label="Imagem anterior"
-                >
-                  <ChevronLeft className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.75]" />
-                </button>
-                <button
-                  onClick={goToNextImage}
-                  className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-9 h-9 sm:w-10 sm:h-10 flex items-center justify-center rounded-full bg-white/25 backdrop-blur-sm border border-white/30 text-gray-700 hover:bg-white/60 hover:scale-110 hover:shadow-md active:scale-95 transition-all duration-200"
-                  aria-label="Próxima imagem"
-                >
-                  <ChevronRight className="w-5 h-5 sm:w-6 sm:h-6 stroke-[1.75]" />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
       </div>
 
       {/* Description */}

@@ -3,7 +3,7 @@
 import type React from "react";
 import { Suspense } from "react";
 import Image from "next/image";
-import { ChevronDown, Menu, Search, ShoppingCart, User, X, Package } from "lucide-react";
+import { ChevronDown, Home, Menu, Search, ShoppingCart, User, X, Package } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useCart } from "@/contexts/cart-context";
@@ -429,6 +429,16 @@ const HeaderContent = () => {
               <span className="absolute -top-1 -right-1 bg-theme-accent text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-bold">
                 {getTotalItems()}
               </span>
+            </Button>
+            <Button
+              variant="ghost"
+              className="text-[var(--text-primary)] hover:text-theme-smoke transition-colors duration-200 p-1 sm:p-2"
+              onClick={handleLogoClick}
+              title="Início"
+              aria-label="Voltar para a página inicial"
+            >
+              <Home className="w-5 h-5 sm:w-6 sm:h-6" />
+              <span className="hidden lg:inline text-sm ml-2">Início</span>
             </Button>
           </div>
         </div>
