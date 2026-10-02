@@ -7,9 +7,8 @@ import { useCart, type CartItem } from "@/contexts/cart-context";
 import { useUser } from "@/contexts/user-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Separator } from "@/components/ui/separator";
-import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { ArrowLeft, ChevronDown, Minus, Plus, ShoppingBag, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -168,6 +167,8 @@ export function CheckoutForm() {
   const [formError, setFormError] = useState<string | null>(null);
   const formErrorRef = useRef<HTMLDivElement>(null);
   const [cepStatus, setCepStatus] = useState<CepStatus>("idle");
+  // Mobile only: the order summary starts collapsed so the form comes first.
+  const [summaryOpen, setSummaryOpen] = useState(false);
   // Digits of the last CEP sent to ViaCEP, so a saved address isn't overwritten on load.
   const lastLookedUpCep = useRef("");
   const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
@@ -680,6 +681,7 @@ export function CheckoutForm() {
 
     const unavailableItem = items.find((item) => !item.pharmacyProductId);
     if (unavailableItem) {
+      setSummaryOpen(true);
       showFormError(
         `"${unavailableItem.name}" não está mais disponível. Remova o item do carrinho e adicione de novo.`,
       );
@@ -692,6 +694,7 @@ export function CheckoutForm() {
     });
     if (overStock.length > 0) {
       const [only] = overStock;
+      setSummaryOpen(true);
       showFormError(
         overStock.length > 1
           ? "Alguns itens têm menos unidades em estoque do que no carrinho. Ajuste os itens marcados para continuar."
@@ -865,6 +868,22 @@ export function CheckoutForm() {
     },
   ];
 
+  const summaryProps = {
+    productsSubtotal,
+    freight,
+    selectedRegionName:
+      deliveryMethod === "delivery"
+        ? selectedRegion?.name
+        : deliveryMethod === "shipping"
+          ? "Envio nacional"
+          : undefined,
+    discountAmount,
+    discountCode: appliedCoupon?.code,
+    freeShipping: isFreeShipping,
+    freeShippingRemaining,
+    showFreight: deliveryMethod !== "pickup",
+  };
+
   const orderTotal = computeOrderTotal({
     productsSubtotal,
     freight,
@@ -917,10 +936,17 @@ export function CheckoutForm() {
 
   const zipProps = fieldProps("zipCode");
   const zipHint = cepHint[cepStatus];
+  const itemCount = items.reduce((sum, item) => sum + item.quantity, 0);
+  const hasStockIssue = items.some((item) => {
+    const stock = getAvailableStock(item);
+    return stock !== null && item.quantity > stock;
+  });
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
-      <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-8">
+    <div className="container mx-auto px-4 py-4 sm:py-8">
+      {/* .container's legacy max-widths win over utilities, so cap the width here. */}
+      <div className="mx-auto w-full max-w-5xl">
+      <div className="flex items-center gap-2 sm:gap-3 mb-4 sm:mb-6">
         <button
           type="button"
           onClick={() => {
@@ -938,12 +964,61 @@ export function CheckoutForm() {
         </h1>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8 mt-4 sm:mt-8">
-        {/* Cart Items */}
-        <div>
-          <Card className="card-static">
-            <CardContent className="p-3 sm:p-6">
-              <div className="space-y-3 sm:space-y-4">
+      {/* DOM order is summary → form so the summary sits on top on mobile;
+          on desktop the grid moves it to a sticky right column. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[minmax(0,1fr)_400px] lg:items-start lg:gap-8">
+        <section
+          aria-label="Resumo do pedido"
+          className="lg:col-start-2 lg:row-start-1 lg:sticky lg:top-28"
+        >
+          <Card className="card-static p-0">
+            <button
+              type="button"
+              onClick={() => setSummaryOpen((open) => !open)}
+              aria-expanded={summaryOpen}
+              aria-controls="order-summary-content"
+              className="flex w-full items-center justify-between gap-3 rounded-[14px] p-4 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring lg:hidden"
+            >
+              <span className="min-w-0">
+                <span className="flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-theme-primary">
+                  <ShoppingBag className="h-4 w-4 shrink-0" aria-hidden="true" />
+                  Resumo do pedido
+                  <ChevronDown
+                    className={cn(
+                      "h-4 w-4 shrink-0 transition-transform motion-reduce:transition-none",
+                      summaryOpen && "rotate-180",
+                    )}
+                    aria-hidden="true"
+                  />
+                </span>
+                <span
+                  className={cn(
+                    "mt-0.5 block text-xs",
+                    hasStockIssue ? "text-destructive" : "text-muted-foreground",
+                  )}
+                >
+                  {hasStockIssue
+                    ? "Revise o estoque dos itens"
+                    : `${itemCount} ${itemCount === 1 ? "item" : "itens"}`}
+                </span>
+              </span>
+              <span className="price shrink-0 whitespace-nowrap text-lg">
+                {formatCurrency(orderTotal)}
+              </span>
+            </button>
+
+            <h2 className="hidden px-6 pt-6 text-lg font-semibold text-theme-primary lg:block">
+              Resumo do pedido
+            </h2>
+
+            <div
+              id="order-summary-content"
+              className={cn(
+                summaryOpen ? "block" : "hidden",
+                "border-t border-border px-4 pb-4 lg:block lg:border-t-0 lg:px-6 lg:pb-6",
+              )}
+            >
+              <ul className="divide-y divide-border lg:max-h-[45vh] lg:overflow-y-auto lg:pr-1">
                 {items.map((item, index) => {
                   const availableStock = getAvailableStock(item);
                   const isMaxReached =
@@ -952,55 +1027,44 @@ export function CheckoutForm() {
                     availableStock !== null && item.quantity > availableStock;
 
                   return (
-                    <div key={item.id} className="p-3 sm:p-4 border rounded">
+                    <li key={item.id} className="flex gap-3 py-3">
                       <Link
                         href={getProductPath(item)}
-                        className="block font-medium text-theme-primary text-xs sm:text-sm line-clamp-2 hover:underline"
+                        className="flex-shrink-0 self-start aspect-square bg-gray-50 rounded overflow-hidden"
                       >
-                        {item.name}
+                        <Image
+                          src={
+                            resolveCdnUrl(item.image) ||
+                            "/placeholder.svg?height=80&width=80"
+                          }
+                          alt={item.name}
+                          width={80}
+                          height={80}
+                          className="w-16 h-16 object-contain p-1"
+                          onError={(e) => {
+                            const target = e.target as HTMLImageElement;
+                            target.src = "/placeholder.svg?height=80&width=80";
+                          }}
+                        />
                       </Link>
-                      {item.variationOptionName && (
-                        <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
-                          {item.variationTypeName
-                            ? `${item.variationTypeName}: `
-                            : ""}
-                          {item.variationOptionName}
-                        </span>
-                      )}
 
-                      <div className="flex items-center gap-3 mt-2">
+                      <div className="min-w-0 flex-1">
                         <Link
                           href={getProductPath(item)}
-                          className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden"
+                          className="block font-medium text-theme-primary text-sm line-clamp-2 hover:underline"
                         >
-                          <Image
-                            src={
-                              resolveCdnUrl(item.image) ||
-                              "/placeholder.svg?height=80&width=80"
-                            }
-                            alt={item.name}
-                            width={80}
-                            height={80}
-                            className="w-16 h-16 sm:w-20 sm:h-20 object-contain p-1"
-                            onError={(e) => {
-                              const target = e.target as HTMLImageElement;
-                              target.src = "/placeholder.svg?height=80&width=80";
-                            }}
-                          />
+                          {item.name}
                         </Link>
+                        {item.variationOptionName && (
+                          <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
+                            {item.variationTypeName
+                              ? `${item.variationTypeName}: `
+                              : ""}
+                            {item.variationOptionName}
+                          </span>
+                        )}
 
-                        <div className="flex flex-1 min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                          <div className="min-w-0 whitespace-nowrap">
-                            <p className="text-base sm:text-lg font-bold text-theme-primary">
-                              {formatCurrency(parseRegionPrice(item.price) * item.quantity)}
-                            </p>
-                            {item.quantity > 1 && (
-                              <p className="text-xs sm:text-sm text-theme-secondary">
-                                {formatCurrency(parseRegionPrice(item.price))} cada
-                              </p>
-                            )}
-                          </div>
-
+                        <div className="mt-2 flex items-center justify-between gap-2">
                           <div className="flex flex-shrink-0 items-center space-x-2">
                             <Button
                               type="button"
@@ -1035,33 +1099,42 @@ export function CheckoutForm() {
                               <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
                             </Button>
                           </div>
-                        </div>
-                      </div>
 
-                      {isMaxReached && availableStock !== null && (
-                        <p
-                          className={cn(
-                            "mt-2 text-xs sm:text-sm",
-                            isOverStock ? "text-destructive" : "text-muted-foreground",
-                          )}
-                        >
-                          {availableStock === 0
-                            ? "Esgotado. Remova o item para continuar."
-                            : isOverStock
-                            ? `Só ${availableStock} em estoque. Diminua a quantidade.`
-                            : availableStock === 1
-                              ? "Última unidade em estoque."
-                              : `Só ${availableStock} em estoque.`}
-                        </p>
-                      )}
-                    </div>
+                          <div className="text-right whitespace-nowrap">
+                            <p className="text-base font-bold text-theme-primary">
+                              {formatCurrency(parseRegionPrice(item.price) * item.quantity)}
+                            </p>
+                            {item.quantity > 1 && (
+                              <p className="text-xs text-theme-secondary">
+                                {formatCurrency(parseRegionPrice(item.price))} cada
+                              </p>
+                            )}
+                          </div>
+                        </div>
+
+                        {isMaxReached && availableStock !== null && (
+                          <p
+                            className={cn(
+                              "mt-2 text-xs sm:text-sm",
+                              isOverStock ? "text-destructive" : "text-muted-foreground",
+                            )}
+                          >
+                            {availableStock === 0
+                              ? "Esgotado. Remova o item para continuar."
+                              : isOverStock
+                              ? `Só ${availableStock} em estoque. Diminua a quantidade.`
+                              : availableStock === 1
+                                ? "Última unidade em estoque."
+                                : `Só ${availableStock} em estoque.`}
+                          </p>
+                        )}
+                      </div>
+                    </li>
                   );
                 })}
-              </div>
+              </ul>
 
-              <Separator className="my-3 sm:my-4" />
-
-              <div className="space-y-2 mb-3 sm:mb-4">
+              <div className="space-y-2 border-t border-border pt-4">
                 <label
                   htmlFor="checkout-coupon"
                   className="block text-xs sm:text-sm font-medium text-theme-primary"
@@ -1084,78 +1157,61 @@ export function CheckoutForm() {
                     </Button>
                   </div>
                 ) : (
-                  <>
-                    <div className="flex gap-2">
-                      <Input
-                        id="checkout-coupon"
-                        value={couponCode}
-                        onChange={(e) => setCouponCode(e.target.value)}
-                        onKeyDown={(e) => {
-                          // The coupon lives outside the <form>, so Enter does nothing by default.
-                          if (e.key === "Enter") {
-                            e.preventDefault();
-                            handleApplyCoupon();
-                          }
-                        }}
-                        placeholder="Código do cupom"
-                        autoComplete="off"
-                        autoCapitalize="characters"
-                        spellCheck={false}
-                        enterKeyHint="done"
-                        className={fieldClassName}
-                        disabled={couponLoading}
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={handleApplyCoupon}
-                        disabled={couponLoading || !couponCode.trim()}
-                        className="shrink-0"
-                      >
-                        {couponLoading ? "Aplicando..." : "Aplicar"}
-                      </Button>
-                    </div>
-                  </>
+                  <div className="flex gap-2">
+                    <Input
+                      id="checkout-coupon"
+                      value={couponCode}
+                      onChange={(e) => setCouponCode(e.target.value)}
+                      onKeyDown={(e) => {
+                        // The coupon lives outside the <form>, so Enter does nothing by default.
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleApplyCoupon();
+                        }
+                      }}
+                      placeholder="Código do cupom"
+                      autoComplete="off"
+                      autoCapitalize="characters"
+                      spellCheck={false}
+                      enterKeyHint="done"
+                      className={fieldClassName}
+                      disabled={couponLoading}
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={handleApplyCoupon}
+                      disabled={couponLoading || !couponCode.trim()}
+                      className="shrink-0"
+                    >
+                      {couponLoading ? "Aplicando..." : "Aplicar"}
+                    </Button>
+                  </div>
                 )}
                 {couponError && (
                   <p className="text-xs sm:text-sm text-red-600">{couponError}</p>
                 )}
               </div>
 
-              <OrderTotalSummary
-                productsSubtotal={productsSubtotal}
-                freight={freight}
-                selectedRegionName={
-                  deliveryMethod === "delivery"
-                    ? selectedRegion?.name
-                    : deliveryMethod === "shipping"
-                      ? "Envio nacional"
-                      : undefined
-                }
-                discountAmount={discountAmount}
-                discountCode={appliedCoupon?.code}
-                freeShipping={isFreeShipping}
-                freeShippingRemaining={freeShippingRemaining}
-                showFreight={deliveryMethod !== "pickup"}
-              />
-            </CardContent>
+              {/* On mobile the single detailed summary sits next to the PIX button instead. */}
+              <div className="mt-4 hidden border-t border-border pt-4 lg:block">
+                <OrderTotalSummary {...summaryProps} />
+              </div>
+            </div>
           </Card>
-        </div>
+        </section>
 
-        {/* Checkout Form or Login Message */}
-        <div>
+        <div className="lg:col-start-1 lg:row-start-1">
           {user ? (
-            <Card className="card-static">
-              <CardHeader className="bg-muted/60 border-b border-border p-3 sm:p-6">
-                <CardTitle className="text-base sm:text-lg text-theme-primary">
+            <Card className="card-static p-0">
+              <div className="p-4 sm:p-6">
+                <h2 className="text-lg font-semibold text-theme-primary">
                   Entrega e pagamento
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 sm:p-6">
+                </h2>
                 <form
                   onSubmit={handleSubmit}
                   noValidate
-                  className="space-y-3 sm:space-y-4 mt-2 sm:mt-4"
+                  className="space-y-3 sm:space-y-4 mt-4"
                 >
                   <DeliveryMethodOptions
                     options={deliveryOptions}
@@ -1385,24 +1441,9 @@ export function CheckoutForm() {
                     <FieldError id="checkout-phone" message={errors.phone} />
                   </div>
 
-                  <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 space-y-3">
-                    <OrderTotalSummary
-                      productsSubtotal={productsSubtotal}
-                      freight={freight}
-                      selectedRegionName={
-                        deliveryMethod === "delivery"
-                          ? selectedRegion?.name
-                          : deliveryMethod === "shipping"
-                            ? "Envio nacional"
-                            : undefined
-                      }
-                      discountAmount={discountAmount}
-                      discountCode={appliedCoupon?.code}
-                      freeShipping={isFreeShipping}
-                      freeShippingRemaining={freeShippingRemaining}
-                      showFreight={deliveryMethod !== "pickup"}
-                      compact
-                    />
+                  {/* Desktop shows these totals in the sticky summary column. */}
+                  <div className="border-t border-border pt-4 lg:hidden">
+                    <OrderTotalSummary {...summaryProps} compact />
                   </div>
 
                   <div>
@@ -1437,17 +1478,12 @@ export function CheckoutForm() {
                         : "Gerar PIX"}
                   </Button>
                 </form>
-              </CardContent>
+              </div>
             </Card>
           ) : (
-            <Card className="card-static">
-              <CardHeader className="bg-muted/60 border-b border-border p-3 sm:p-6">
-                <CardTitle className="text-base sm:text-lg text-theme-primary">
-                  Entrega e pagamento
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="p-3 sm:p-6">
-                <div className="text-center py-6 sm:py-8">
+            <Card className="card-static p-0">
+              <div className="p-4 sm:p-6">
+                <div className="text-center py-4 sm:py-8">
                   <h2 className="text-lg sm:text-xl font-bold text-theme-primary mb-3 sm:mb-4">
                     Faça login para finalizar a compra
                   </h2>
@@ -1471,12 +1507,12 @@ export function CheckoutForm() {
                     </Button>
                   </div>
                 </div>
-              </CardContent>
+              </div>
             </Card>
           )}
         </div>
       </div>
-
+      </div>
     </div>
   );
 }
