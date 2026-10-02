@@ -9,8 +9,40 @@ module.exports = {
     "*.{js,ts,jsx,tsx,mdx}",
   ],
   theme: {
+    // Centered, 16px gutter, capped at 1280px — what the old hand-written
+    // `.container` fallback in globals.css enforced.
+    container: {
+      center: true,
+      padding: "1rem",
+      screens: {
+        sm: "640px",
+        md: "768px",
+        lg: "1024px",
+        xl: "1280px",
+      },
+    },
     extend: {
+      // Storefront type scale, larger than Tailwind's defaults. It is what the
+      // old hand-written overrides in globals.css gave un-prefixed classes, and
+      // the mobile layout was tuned against it.
+      fontSize: {
+        sm: ["1rem", "1.25rem"],
+        lg: ["1.25rem", "1.75rem"],
+        xl: ["1.5rem", "1.75rem"],
+        "2xl": ["1.6rem", "2rem"],
+        // UI labels and buttons. The old `.font-medium` override silently forced
+        // this size on every medium-weight element; it is now explicit.
+        label: ["0.9rem", "1.25rem"],
+      },
       colors: {
+        // The storefront remaps these grays to the warm theme tokens.
+        gray: {
+          50: "color-mix(in srgb, var(--bg-secondary) 88%, #ffffff 12%)",
+          200: "var(--surface-border)",
+          500: "var(--text-secondary)",
+          600: "var(--text-secondary)",
+          700: "var(--text-primary)",
+        },
         theme: {
           primary: "#F7F3EE",
           primaryBrown: "#EFE7DD",
@@ -59,7 +91,7 @@ module.exports = {
         },
       },
       borderRadius: {
-        lg: "var(--radius)",
+        lg: "0.5rem",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)",
       },

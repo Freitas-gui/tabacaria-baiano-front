@@ -26,7 +26,7 @@ export function Footer() {
   return (
     <>
       <footer className="footer-site mt-8 sm:mt-16">
-        <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-12">
+        <div className="container mx-auto px-4 py-6 sm:py-12">
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8">
             <div>
               <p className="text-sm opacity-90 mb-2">{STORE_INFO.tagline}</p>

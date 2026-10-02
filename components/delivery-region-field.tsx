@@ -95,7 +95,7 @@ export function DeliveryRegionField({
       <div>
         <label
           htmlFor={id}
-          className="block text-xs sm:text-sm font-medium text-theme-primary mb-1"
+          className="block text-label leading-4 sm:text-sm font-medium text-theme-primary mb-1"
         >
           {label}
           {required ? " *" : ""}

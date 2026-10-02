@@ -47,7 +47,7 @@ export function OrderTotalSummary({
     <div className={compact ? "space-y-2" : "space-y-3"}>
       <div className="flex justify-between items-center text-sm sm:text-base">
         <span className="text-muted-foreground">Subtotal dos produtos</span>
-        <span className="font-medium text-theme-primary">
+        <span className="text-label font-medium text-theme-primary">
           {formatCurrency(productsSubtotal)}
         </span>
       </div>
@@ -57,7 +57,7 @@ export function OrderTotalSummary({
             Frete
             {selectedRegionName ? ` (${selectedRegionName})` : ""}
           </span>
-          <span className="font-medium text-theme-primary">
+          <span className="text-label font-medium text-theme-primary">
             {freeShipping && freight > 0 ? (
               <>
                 <span className="line-through text-muted-foreground mr-1">
@@ -89,7 +89,7 @@ export function OrderTotalSummary({
           <span className="text-muted-foreground">
             Desconto{discountCode ? ` (${discountCode})` : ""}
           </span>
-          <span className="font-medium text-green-600">
+          <span className="text-label font-medium text-green-600">
             -{formatCurrency(discountAmount)}
           </span>
         </div>

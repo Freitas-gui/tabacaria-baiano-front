@@ -521,7 +521,7 @@ export function ProductDetail({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+    <div className="container mx-auto px-4 py-4 sm:py-8">
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 sm:gap-8">
         {/* Thumbnails: vertical column on desktop */}
         <div className="hidden lg:block lg:col-span-2">
@@ -705,7 +705,7 @@ export function ProductDetail({ slug }: { slug: string }) {
                       }
                     >
                       <div className="flex-1 min-w-0">
-                        <div className="text-xs sm:text-sm font-medium text-theme-primary break-words">
+                        <div className="text-label leading-4 sm:text-sm font-medium text-theme-primary break-words">
                           {pharmacy.name}
                         </div>
                       </div>
@@ -807,7 +807,7 @@ export function ProductDetail({ slug }: { slug: string }) {
                   frameClassName="mb-4 sm:mb-6 flex-shrink-0"
                 />
 
-                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-0.5 sm:mb-1 line-clamp-2 flex-shrink-0">
+                <h3 className="text-label leading-4 sm:text-sm font-medium text-theme-primary mb-0.5 sm:mb-1 line-clamp-2 flex-shrink-0">
                   {relatedProduct.name}
                 </h3>
 

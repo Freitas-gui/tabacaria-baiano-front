@@ -497,13 +497,13 @@ export function OrdersPage() {
 
   if (selectedOrder) {
     return (
-      <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+      <div className="container mx-auto px-4 py-4 sm:py-8">
         <div className="mb-4 sm:mb-6">
           <div className="flex flex-wrap gap-2 sm:gap-3 mb-3 sm:mb-4">
             <Button
               variant="outline"
               onClick={handleBackToOrders}
-              className="text-xs sm:text-sm"
+              className="text-label sm:text-sm"
             >
               ← Voltar aos Pedidos
             </Button>
@@ -610,7 +610,7 @@ export function OrdersPage() {
                           />
                         </div>
                         <div className="flex-1">
-                          <h3 className="font-medium text-theme-primary">
+                          <h3 className="text-label font-medium text-theme-primary">
                             {item.name}
                           </h3>
                           <div className="flex items-center justify-between mt-2">
@@ -781,7 +781,7 @@ export function OrdersPage() {
   }
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+    <div className="container mx-auto px-4 py-4 sm:py-8">
       <div className="mb-6 sm:mb-8">
         <div className="flex items-center gap-2 sm:gap-3 mb-2">
           <button
@@ -988,7 +988,7 @@ export function OrdersPage() {
                         className="rounded border w-8 h-8 sm:w-10 sm:h-10 object-cover"
                       />
                       <div className="text-xs text-muted-foreground">
-                        <div className="font-medium truncate max-w-[100px] sm:max-w-[120px]">
+                        <div className="text-label leading-4 font-medium truncate max-w-[100px] sm:max-w-[120px]">
                           {item.name}
                         </div>
                         <div>Qtd: {item.quantity}</div>

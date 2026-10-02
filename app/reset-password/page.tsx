@@ -136,19 +136,19 @@ function ResetPasswordForm() {
               <div className="bg-secondary border border-white/10 rounded-lg p-4 space-y-3">
                 {userName && (
                   <div>
-                    <label className="block text-xs font-medium text-muted-foreground mb-1">
+                    <label className="block text-label leading-4 font-medium text-muted-foreground mb-1">
                       Nome
                     </label>
-                    <p className="text-sm font-medium text-foreground">
+                    <p className="text-label font-medium text-foreground">
                       {userName}
                     </p>
                   </div>
                 )}
                 <div>
-                  <label className="block text-xs font-medium text-muted-foreground mb-1">
+                  <label className="block text-label leading-4 font-medium text-muted-foreground mb-1">
                     E-mail
                   </label>
-                  <p className="text-sm font-medium text-foreground">{email}</p>
+                  <p className="text-label font-medium text-foreground">{email}</p>
                 </div>
               </div>
             )}
@@ -161,7 +161,7 @@ function ResetPasswordForm() {
             <div>
               <label
                 htmlFor="password"
-                className="block text-sm font-medium text-foreground mb-1"
+                className="block text-label font-medium text-foreground mb-1"
               >
                 Nova senha
               </label>
@@ -179,7 +179,7 @@ function ResetPasswordForm() {
             <div>
               <label
                 htmlFor="passwordConfirmation"
-                className="block text-sm font-medium text-foreground mb-1"
+                className="block text-label font-medium text-foreground mb-1"
               >
                 Confirmar senha
               </label>

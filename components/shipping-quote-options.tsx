@@ -66,7 +66,7 @@ export function ShippingQuoteOptions({
               checked={selectedCode === quote.service_code}
               onChange={() => onSelect(quote.service_code)}
             />
-            <span className="text-xs sm:text-sm font-medium text-theme-primary">
+            <span className="text-label leading-4 sm:text-sm font-medium text-theme-primary">
               {quote.service_name}
             </span>
           </span>

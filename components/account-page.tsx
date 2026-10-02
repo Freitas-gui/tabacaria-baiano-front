@@ -11,7 +11,7 @@ import { useDeliveryRegions } from "@/hooks/use-delivery-regions"
 const inputClassName =
   "w-full px-4 py-2 border border-border rounded-lg bg-background text-foreground placeholder:text-muted-foreground"
 
-const labelClassName = "block text-sm font-medium text-foreground mb-1"
+const labelClassName = "block text-label font-medium text-foreground mb-1"
 
 function Field({
   id,
@@ -180,7 +180,7 @@ export function AccountPage() {
   }
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-6 sm:py-10 max-w-lg">
+    <div className="container mx-auto px-4 py-6 sm:py-10 max-w-lg">
       <div className="flex items-center gap-2 sm:gap-3 mb-2">
         <button
           type="button"

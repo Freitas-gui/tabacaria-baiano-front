@@ -28,7 +28,7 @@ export function DeliveryMethodOptions({
 }: DeliveryMethodOptionsProps) {
   return (
     <fieldset className="space-y-2">
-      <legend className="mb-2 text-sm font-medium text-theme-primary">
+      <legend className="mb-2 text-label font-medium text-theme-primary">
         Como deseja receber?
       </legend>
       <RadioGroup

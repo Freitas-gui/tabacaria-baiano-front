@@ -312,7 +312,7 @@ const HeaderContent = () => {
 
   return (
     <header className="sticky top-0 z-50 bg-theme-header text-[var(--text-primary)] shadow-sm">
-      <div className="container mx-auto px-2 sm:px-4 py-2 sm:py-3">
+      <div className="container mx-auto px-4 py-2 sm:py-3">
         <div className="flex items-center justify-between gap-2 sm:gap-4">
           <div className="flex items-center flex-shrink-0">
             <button
@@ -496,7 +496,7 @@ const HeaderContent = () => {
             navSettledOpen ? "overflow-visible" : "overflow-hidden"
           } ${isMobileMenuOpen ? "opacity-100" : "opacity-0"}`}
         >
-          <div className="container mx-auto px-2 sm:px-4">
+          <div className="container mx-auto px-4">
             <div
               ref={categoryNavRef}
               className="grid grid-cols-2 gap-x-2 gap-y-1.5 py-2 md:flex md:flex-wrap md:justify-center md:gap-x-6 md:gap-y-2 md:py-3 lg:gap-x-8"

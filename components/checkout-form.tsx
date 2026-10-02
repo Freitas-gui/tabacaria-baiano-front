@@ -48,7 +48,7 @@ const FIND_CEP_URL = "https://buscacepinter.correios.com.br/app/endereco/index.p
 // explicit 16px on mobile so iOS Safari doesn't zoom in on focus.
 const fieldClassName = "bg-card text-base md:text-base focus:border-theme-accent";
 const invalidFieldClassName = "border-destructive focus:border-destructive";
-const labelClassName = "block text-xs sm:text-sm font-medium text-theme-primary mb-1";
+const labelClassName = "block text-label leading-4 sm:text-sm font-medium text-theme-primary mb-1";
 
 type FieldKey =
   | "district"
@@ -1053,7 +1053,7 @@ export function CheckoutForm() {
                       <div className="min-w-0 flex-1">
                         <Link
                           href={getProductPath(item)}
-                          className="block font-medium text-theme-primary text-sm line-clamp-2 hover:underline"
+                          className="block font-medium text-theme-primary text-label line-clamp-2 hover:underline"
                         >
                           {item.name}
                         </Link>
@@ -1139,13 +1139,13 @@ export function CheckoutForm() {
               <div className="space-y-2 border-t border-border pt-4">
                 <label
                   htmlFor="checkout-coupon"
-                  className="block text-xs sm:text-sm font-medium text-theme-primary"
+                  className="block text-label leading-4 sm:text-sm font-medium text-theme-primary"
                 >
                   Cupom de desconto
                 </label>
                 {appliedCoupon ? (
                   <div className="flex items-center justify-between gap-2 rounded-md border border-border bg-muted/40 p-2 sm:p-3">
-                    <span className="text-xs sm:text-sm font-medium text-green-600">
+                    <span className="text-label leading-4 sm:text-sm font-medium text-green-600">
                       Cupom {appliedCoupon.code} aplicado
                     </span>
                     <Button
@@ -1224,7 +1224,7 @@ export function CheckoutForm() {
 
                   {deliveryMethod !== "pickup" ? (
                     <>
-                      <p className="pt-1 text-sm font-medium text-theme-primary">
+                      <p className="pt-1 text-label font-medium text-theme-primary">
                         Endereço para entrega
                       </p>
 
@@ -1385,7 +1385,7 @@ export function CheckoutForm() {
 
                       {deliveryMethod === "shipping" && (
                         <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
-                          <p className="text-xs sm:text-sm font-medium text-theme-primary">
+                          <p className="text-label leading-4 sm:text-sm font-medium text-theme-primary">
                             Frete do envio nacional
                           </p>
                           <p className="text-xs sm:text-sm text-muted-foreground mt-1">
@@ -1403,7 +1403,7 @@ export function CheckoutForm() {
                     </>
                   ) : (
                     <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 text-xs sm:text-sm">
-                      <p className="font-medium text-theme-primary">Onde retirar</p>
+                      <p className="text-label font-medium text-theme-primary">Onde retirar</p>
                       <p className="text-muted-foreground mt-1">
                         {STORE_INFO.addressLine1}
                         <br />
@@ -1449,7 +1449,7 @@ export function CheckoutForm() {
                   </div>
 
                   <div>
-                    <p className="text-sm font-medium text-theme-primary">Pagamento</p>
+                    <p className="text-label font-medium text-theme-primary">Pagamento</p>
                     <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
                       PIX. Depois de confirmar, você recebe o QR Code e o código copia e
                       cola. O pedido é confirmado assim que o pagamento cair.
@@ -1471,7 +1471,7 @@ export function CheckoutForm() {
                     type="submit"
                     disabled={isSubmitting}
                     aria-busy={isSubmitting}
-                    className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
+                    className="w-full btn-theme-primary py-2 sm:py-3 text-label sm:text-lg"
                   >
                     {isSubmitting
                       ? "Gerando seu PIX…"

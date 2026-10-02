@@ -277,7 +277,7 @@ export function HomepageContent() {
         : `Produtos: Todos (${filteredProducts.length} produtos)`;
 
   return (
-    <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
+    <div className="container mx-auto px-4 py-4 sm:py-8">
       <BannerCarousel />
       {/* Search Results Header */}
       {searchQuery && (
@@ -356,7 +356,7 @@ export function HomepageContent() {
                     />
                   </div>
                   <h3
-                    className={`text-xs font-medium leading-tight ${
+                    className={`text-label font-medium leading-tight ${
                       highlightedParentId === parent.id
                         ? "text-theme-accent"
                         : "text-foreground"
@@ -441,7 +441,7 @@ export function HomepageContent() {
                   />
                 </div>
 
-                <h3 className="text-xs sm:text-sm font-medium text-theme-primary mb-0.5 sm:mb-1 line-clamp-2 flex-shrink-0">
+                <h3 className="text-label leading-4 sm:text-sm font-medium text-theme-primary mb-0.5 sm:mb-1 line-clamp-2 flex-shrink-0">
                   {product.name}
                 </h3>
 
@@ -471,7 +471,7 @@ export function HomepageContent() {
             {searchQuery && (
               <Button
                 onClick={handleShowAllProducts}
-                className="btn-theme-primary text-sm sm:text-base"
+                className="btn-theme-primary text-label sm:text-base"
               >
                 Ver todos os produtos
               </Button>
