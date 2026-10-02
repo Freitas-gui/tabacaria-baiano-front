@@ -1,10 +1,20 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
+import { getSafeRedirect, withNext } from "@/lib/safe-redirect";
 
 export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-theme-primary" />}>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const next = useSearchParams().get("next");
   const { login } = useUser();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -24,7 +34,7 @@ export default function LoginPage() {
 
     try {
       await login(email, password);
-      router.push("/");
+      router.push(getSafeRedirect(next));
     } catch (err: any) {
       setError(err.message || "Erro ao fazer login. Tente novamente.");
     } finally {
@@ -119,7 +129,7 @@ export default function LoginPage() {
             Esqueci minha senha
           </a>
           <a
-            href="/register"
+            href={withNext("/register", next)}
             className="text-foreground text-sm hover:text-theme-accent hover:underline"
           >
             Criar conta

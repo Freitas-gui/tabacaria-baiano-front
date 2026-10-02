@@ -19,6 +19,11 @@ export function isValidCep(cep: string): boolean {
   return cep.replace(/\D/g, "").length === 8;
 }
 
+export function formatCep(value: string): string {
+  const digits = value.replace(/\D/g, "").slice(0, 8);
+  return digits.length > 5 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : digits;
+}
+
 export async function fetchCorreiosQuotes(
   destinationCep: string,
   items: CorreiosQuoteItem[],

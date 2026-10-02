@@ -1,10 +1,20 @@
 "use client";
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
+import { getSafeRedirect, withNext } from "@/lib/safe-redirect";
 
 export default function RegisterPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-theme-primary" />}>
+      <RegisterForm />
+    </Suspense>
+  );
+}
+
+function RegisterForm() {
   const router = useRouter();
+  const next = useSearchParams().get("next");
   const { register } = useUser();
   const [form, setForm] = useState({
     nome: "",
@@ -52,7 +62,7 @@ export default function RegisterPage() {
         phone: form.telefone,
       });
 
-      router.push("/");
+      router.push(getSafeRedirect(next));
     } catch (err: any) {
       setError(err?.message || "Erro ao registrar. Tente novamente.");
       setLoading(false);
@@ -142,7 +152,7 @@ export default function RegisterPage() {
         </form>
         <div className="mt-8 flex flex-col items-center space-y-2">
           <a
-            href="/login"
+            href={withNext("/login", next)}
             className="text-muted-foreground text-sm hover:text-theme-accent hover:underline"
           >
             Já tem conta? Entrar

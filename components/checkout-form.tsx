@@ -27,13 +27,19 @@ import { DeliveryRegionField } from "@/components/delivery-region-field";
 import { OrderTotalSummary } from "@/components/order-total-summary";
 import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
 import { useFreeShippingPromotion } from "@/hooks/use-free-shipping-promotion";
-import { isValidCep } from "@/lib/correios-freight";
+import { formatCep, isValidCep } from "@/lib/correios-freight";
+import { withNext } from "@/lib/safe-redirect";
 import {
   formatCurrency,
   parseRegionPrice,
 } from "@/lib/delivery-regions";
 
 const NATIONAL_SHIPPING_FLAT_FEE = 35;
+
+// White fill so editable fields don't read as disabled on the cream card, and an
+// explicit 16px on mobile so iOS Safari doesn't zoom in on focus.
+const fieldClassName = "bg-card text-base md:text-base focus:border-theme-accent";
+const labelClassName = "block text-xs sm:text-sm font-medium text-theme-primary mb-1";
 
 function resolveCreatedOrderId(data: {
   order_id?: string;
@@ -97,7 +103,7 @@ export function CheckoutForm() {
         district: user.address.district || "",
         city: user.address.city || "",
         state: user.address.state || "",
-        zipCode: user.address.postal_code || "",
+        zipCode: formatCep(user.address.postal_code || ""),
       });
     } else if (user) {
       setFormData({
@@ -366,9 +372,15 @@ export function CheckoutForm() {
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
+    const { name, value } = e.target;
     setFormData({
       ...formData,
-      [e.target.name]: e.target.value,
+      [name]:
+        name === "zipCode"
+          ? formatCep(value)
+          : name === "state"
+            ? value.toUpperCase()
+            : value,
     });
   };
 
@@ -648,20 +660,16 @@ export function CheckoutForm() {
                         />
                       </Link>
 
-                      <div className="flex flex-1 min-w-0 items-center justify-between gap-2">
-                        <div className="min-w-0">
+                      <div className="flex flex-1 min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div className="min-w-0 whitespace-nowrap">
                           <p className="text-base sm:text-lg font-bold text-theme-primary">
-                            R$ {item.price}
+                            {formatCurrency(parseRegionPrice(item.price) * item.quantity)}
                           </p>
-                          <p className="text-xs sm:text-sm font-semibold text-theme-secondary">
-                            Subtotal: R${" "}
-                            {(
-                              Number.parseFloat(item.price.replace(",", ".")) *
-                              item.quantity
-                            )
-                              .toFixed(2)
-                              .replace(".", ",")}
-                          </p>
+                          {item.quantity > 1 && (
+                            <p className="text-xs sm:text-sm text-theme-secondary">
+                              {formatCurrency(parseRegionPrice(item.price))} cada
+                            </p>
+                          )}
                         </div>
 
                         <div className="flex flex-shrink-0 items-center space-x-2">
@@ -724,7 +732,10 @@ export function CheckoutForm() {
               <Separator className="my-3 sm:my-4" />
 
               <div className="space-y-2 mb-3 sm:mb-4">
-                <label className="block text-xs sm:text-sm font-medium text-theme-primary">
+                <label
+                  htmlFor="checkout-coupon"
+                  className="block text-xs sm:text-sm font-medium text-theme-primary"
+                >
                   Cupom de desconto
                 </label>
                 {appliedCoupon ? (
@@ -746,10 +757,22 @@ export function CheckoutForm() {
                   <>
                     <div className="flex gap-2">
                       <Input
+                        id="checkout-coupon"
                         value={couponCode}
                         onChange={(e) => setCouponCode(e.target.value)}
-                        placeholder="Digite o código do cupom"
-                        className="focus:border-theme-accent text-sm sm:text-base"
+                        onKeyDown={(e) => {
+                          // The coupon lives outside the <form>, so Enter does nothing by default.
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            handleApplyCoupon();
+                          }
+                        }}
+                        placeholder="Código do cupom"
+                        autoComplete="off"
+                        autoCapitalize="characters"
+                        spellCheck={false}
+                        enterKeyHint="done"
+                        className={fieldClassName}
                         disabled={couponLoading}
                       />
                       <Button
@@ -831,47 +854,53 @@ export function CheckoutForm() {
 
                   {deliveryMethod !== "pickup" ? (
                     <>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
-                      Endereço para entrega:
-                    </label>
+                    <p className="text-sm font-medium text-theme-primary">
+                      Endereço para entrega
+                    </p>
                       <div>
-                        <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                        <label htmlFor="checkout-street" className={labelClassName}>
                           Rua *
                         </label>
                         <Input
+                          id="checkout-street"
+                          autoComplete="address-line1"
                           name="street"
                           value={formData.street}
                           onChange={handleInputChange}
                           required
                           placeholder="Nome da rua"
-                          className="focus:border-theme-accent text-sm sm:text-base"
+                          className={fieldClassName}
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
                         <div>
-                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          <label htmlFor="checkout-street-number" className={labelClassName}>
                             Número *
                           </label>
                           <Input
+                            id="checkout-street-number"
+                            autoComplete="off"
                             name="street_number"
                             value={formData.street_number}
                             onChange={handleInputChange}
                             required
                             placeholder="123"
-                            className="focus:border-theme-accent text-sm sm:text-base"
+                            className={fieldClassName}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          <label htmlFor="checkout-address-details" className={labelClassName}>
                             Complemento
                           </label>
                           <Input
+                            id="checkout-address-details"
+                            autoComplete="address-line2"
                             name="address_details"
                             value={formData.address_details}
                             onChange={handleInputChange}
                             placeholder="Apto, Bloco, etc"
-                            className="focus:border-theme-accent text-sm sm:text-base"
+                            className={fieldClassName}
                           />
                         </div>
                       </div>
@@ -885,62 +914,73 @@ export function CheckoutForm() {
                           loading={loadingRegions}
                           error={regionsError}
                           disabled={isSubmitting}
+                          selectClassName="bg-card"
                         />
                       ) : (
                         <div>
-                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          <label htmlFor="checkout-district" className={labelClassName}>
                             Bairro *
                           </label>
                           <Input
+                            id="checkout-district"
+                            autoComplete="address-level3"
                             name="district"
                             value={formData.district}
                             onChange={handleInputChange}
                             required
                             placeholder="Seu bairro"
-                            className="focus:border-theme-accent text-sm sm:text-base"
+                            className={fieldClassName}
                           />
                         </div>
                       )}
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
                         <div>
-                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          <label htmlFor="checkout-city" className={labelClassName}>
                             Cidade *
                           </label>
                           <Input
+                            id="checkout-city"
+                            autoComplete="address-level2"
                             name="city"
                             value={formData.city}
                             onChange={handleInputChange}
                             required
                             placeholder="Sua cidade"
-                            className="focus:border-theme-accent text-sm sm:text-base"
+                            className={fieldClassName}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          <label htmlFor="checkout-state" className={labelClassName}>
                             Estado *
                           </label>
                           <Input
+                            id="checkout-state"
+                            autoComplete="address-level1"
+                            autoCapitalize="characters"
                             name="state"
                             value={formData.state}
                             onChange={handleInputChange}
                             required
                             placeholder="UF"
                             maxLength={2}
-                            className="focus:border-theme-accent text-sm sm:text-base"
+                            className={fieldClassName}
                           />
                         </div>
                         <div>
-                          <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                          <label htmlFor="checkout-zip" className={labelClassName}>
                             CEP *
                           </label>
                           <Input
+                            id="checkout-zip"
+                            autoComplete="postal-code"
+                            inputMode="numeric"
                             name="zipCode"
                             value={formData.zipCode}
                             onChange={handleInputChange}
                             required
                             placeholder="00000-000"
-                            className="focus:border-theme-accent text-sm sm:text-base"
+                            className={fieldClassName}
                           />
                         </div>
                       </div>
@@ -977,19 +1017,20 @@ export function CheckoutForm() {
                   )}
 
                   <div>
-                    <label className="block text-xs sm:text-sm font-medium text-theme-primary mb-1">
+                    <label htmlFor="checkout-phone" className={labelClassName}>
                       Telefone *
                     </label>
                     <Input
+                      id="checkout-phone"
+                      autoComplete="tel-national"
                       name="phone"
                       type="tel"
                       inputMode="numeric"
                       value={formData.phone}
                       onChange={handlePhoneChange}
                       required
-                      placeholder="11 9876-54321"
-                      maxLength={14}
-                      className="focus:border-theme-accent text-sm sm:text-base"
+                      placeholder="(73) 99999-9999"
+                      className={fieldClassName}
                     />
                   </div>
 
@@ -1045,13 +1086,13 @@ export function CheckoutForm() {
                   </p>
                   <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
                     <Button
-                      onClick={() => router.push("/login")}
+                      onClick={() => router.push(withNext("/login", "/checkout"))}
                       className="btn-theme-primary w-full sm:w-auto"
                     >
                       Fazer Login
                     </Button>
                     <Button
-                      onClick={() => router.push("/register")}
+                      onClick={() => router.push(withNext("/register", "/checkout"))}
                       variant="outline"
                       className="w-full sm:w-auto rounded-[10px] border-border bg-transparent text-foreground hover:bg-[var(--bg-secondary)]"
                     >
