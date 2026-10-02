@@ -54,6 +54,9 @@ export function DeliveryRegionField({
   showPrice = true,
 }: DeliveryRegionFieldProps) {
   const [open, setOpen] = useState(false);
+  // Touch devices get the OS picker: no on-screen keyboard from the search box
+  // and no popover covering the fields above it.
+  const [useNativeSelect, setUseNativeSelect] = useState(false);
   const listRef = useRef<HTMLDivElement>(null);
   const placeholder = loading ? "Carregando regiões..." : "Selecione sua região";
   const isDisabled = disabled || loading || regions.length === 0;
@@ -63,6 +66,14 @@ export function DeliveryRegionField({
     showPrice
       ? `${region.name} — ${formatCurrency(parseRegionPrice(region.price))}`
       : region.name;
+
+  useEffect(() => {
+    const query = window.matchMedia("(pointer: coarse)");
+    const update = () => setUseNativeSelect(query.matches);
+    update();
+    query.addEventListener("change", update);
+    return () => query.removeEventListener("change", update);
+  }, []);
 
   useEffect(() => {
     const list = listRef.current;
@@ -89,6 +100,37 @@ export function DeliveryRegionField({
           {label}
           {required ? " *" : ""}
         </label>
+        {useNativeSelect ? (
+          <div className="relative">
+            <select
+              id={id}
+              value={selectedRegion ? selectedRegion.name : ""}
+              onChange={(event) => onChange(event.target.value)}
+              required={required}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? `${id}-error` : undefined}
+              disabled={isDisabled}
+              className={cn(
+                "flex h-10 w-full appearance-none rounded-lg border border-input bg-background py-2 pl-3 pr-9 text-base ring-offset-background focus:outline-none focus:ring-2 focus:ring-theme-accent focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
+                !selectedRegion && "text-muted-foreground",
+                selectClassName,
+              )}
+            >
+              <option value="" disabled>
+                {placeholder}
+              </option>
+              {regions.map((region) => (
+                <option key={region.id} value={region.name} className="text-foreground">
+                  {formatRegionLabel(region)}
+                </option>
+              ))}
+            </select>
+            <ChevronDown
+              className="pointer-events-none absolute right-3 top-1/2 h-4 w-4 -translate-y-1/2 opacity-50"
+              aria-hidden="true"
+            />
+          </div>
+        ) : (
         <Popover open={open} onOpenChange={setOpen}>
           <PopoverTrigger asChild>
             <button
@@ -151,6 +193,7 @@ export function DeliveryRegionField({
             </Command>
           </PopoverContent>
         </Popover>
+        )}
         {error && (
           <p id={`${id}-error`} className="mt-1 text-xs sm:text-sm text-destructive">
             {error}

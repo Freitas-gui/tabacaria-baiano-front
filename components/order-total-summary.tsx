@@ -14,6 +14,8 @@ type OrderTotalSummaryProps = {
   /** Amount still missing to unlock the free-shipping promotion. */
   freeShippingRemaining?: number;
   showFreight?: boolean;
+  /** Shown instead of a price while the freight can't be known yet (e.g. no region picked). */
+  freightPendingLabel?: string;
 };
 
 /** Same math the summary displays; the backend recalculates on order creation. */
@@ -37,6 +39,7 @@ export function OrderTotalSummary({
   freeShipping = false,
   freeShippingRemaining,
   showFreight = true,
+  freightPendingLabel,
 }: OrderTotalSummaryProps) {
   const total = computeOrderTotal({ productsSubtotal, freight, discountAmount, freeShipping });
 
@@ -66,6 +69,10 @@ export function OrderTotalSummary({
               "Grátis"
             ) : freight > 0 ? (
               formatCurrency(freight)
+            ) : freightPendingLabel ? (
+              <span className="text-sm font-normal text-muted-foreground">
+                {freightPendingLabel}
+              </span>
             ) : (
               "—"
             )}

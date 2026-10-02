@@ -882,6 +882,8 @@ export function CheckoutForm() {
     freeShipping: isFreeShipping,
     freeShippingRemaining,
     showFreight: deliveryMethod !== "pickup",
+    freightPendingLabel:
+      deliveryMethod === "delivery" && !selectedRegion ? "Escolha a região" : undefined,
   };
 
   const orderTotal = computeOrderTotal({
@@ -921,13 +923,13 @@ export function CheckoutForm() {
             Seu carrinho está vazio
           </h1>
           <p className="text-muted-foreground mb-8">
-            Adicione alguns produtos para continuar com a compra.
+            Adicione produtos para finalizar a compra.
           </p>
           <Button
             onClick={() => router.push("/")}
             className="btn-theme-primary"
           >
-            Continuar Comprando
+            Continuar comprando
           </Button>
         </div>
       </div>
@@ -953,14 +955,14 @@ export function CheckoutForm() {
             router.push("/");
             window.scrollTo(0, 0);
           }}
-          className="flex-shrink-0 flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-full text-muted-foreground hover:text-theme-primary hover:bg-muted/60 transition-colors"
+          className="-ml-2 flex-shrink-0 flex items-center justify-center w-10 h-10 rounded-full text-muted-foreground hover:text-theme-primary hover:bg-muted/60 transition-colors"
           aria-label="Voltar para a tela inicial"
           title="Voltar para a tela inicial"
         >
-          <ArrowLeft className="w-4 h-4 sm:w-5 sm:h-5" />
+          <ArrowLeft className="w-5 h-5" />
         </button>
         <h1 className="text-2xl sm:text-3xl font-bold text-theme-primary">
-          Finalizar Compra
+          Finalizar compra
         </h1>
       </div>
 
@@ -1065,7 +1067,7 @@ export function CheckoutForm() {
                         )}
 
                         <div className="mt-2 flex items-center justify-between gap-2">
-                          <div className="flex flex-shrink-0 items-center space-x-2">
+                          <div className="flex flex-shrink-0 items-center space-x-1">
                             <Button
                               type="button"
                               variant="outline"
@@ -1076,12 +1078,12 @@ export function CheckoutForm() {
                                   ? `Remover ${item.name} do carrinho`
                                   : `Diminuir quantidade de ${item.name}`
                               }
-                              className="text-theme-secondary hover:bg-muted h-8 w-8 p-0"
+                              className="text-theme-secondary hover:bg-muted h-10 w-10 p-0"
                             >
                               {item.quantity === 1 ? (
-                                <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                                <Trash2 className="w-4 h-4" />
                               ) : (
-                                <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
+                                <Minus className="w-4 h-4" />
                               )}
                             </Button>
                             <span className="w-6 sm:w-8 text-center text-sm" aria-live="polite">
@@ -1094,9 +1096,9 @@ export function CheckoutForm() {
                               onClick={() => updateQuantity(item.id, item.quantity + 1)}
                               disabled={isMaxReached}
                               aria-label={`Aumentar quantidade de ${item.name}`}
-                              className="text-theme-secondary hover:bg-muted h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                              className="text-theme-secondary hover:bg-muted h-10 w-10 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
-                              <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                              <Plus className="w-4 h-4" />
                             </Button>
                           </div>
 
@@ -1151,7 +1153,7 @@ export function CheckoutForm() {
                       variant="outline"
                       size="sm"
                       onClick={handleRemoveCoupon}
-                      className="h-8"
+                      className="h-10"
                     >
                       Remover
                     </Button>
@@ -1184,7 +1186,7 @@ export function CheckoutForm() {
                       disabled={couponLoading || !couponCode.trim()}
                       className="shrink-0"
                     >
-                      {couponLoading ? "Aplicando..." : "Aplicar"}
+                      {couponLoading ? "Aplicando…" : "Aplicar"}
                     </Button>
                   </div>
                 )}
@@ -1248,7 +1250,7 @@ export function CheckoutForm() {
                             href={FIND_CEP_URL}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="text-xs sm:text-sm text-theme-accent underline-offset-2 hover:underline"
+                            className="-my-1 py-1 text-xs sm:text-sm text-theme-accent underline-offset-2 hover:underline"
                           >
                             Não sei meu CEP
                           </a>
@@ -1485,25 +1487,25 @@ export function CheckoutForm() {
               <div className="p-4 sm:p-6">
                 <div className="text-center py-4 sm:py-8">
                   <h2 className="text-lg sm:text-xl font-bold text-theme-primary mb-3 sm:mb-4">
-                    Faça login para finalizar a compra
+                    Entre para finalizar a compra
                   </h2>
-                  <p className="text-sm sm:text-base text-gray-600 mb-6 sm:mb-8 px-2">
-                    Você precisa estar logado para finalizar sua compra. Crie
-                    uma conta gratuitamente ou faça login se já tiver uma.
+                  <p className="text-sm sm:text-base text-muted-foreground mb-6 sm:mb-8 px-2">
+                    Para gerar o PIX, entre na sua conta ou crie uma. Seu carrinho
+                    continua salvo.
                   </p>
                   <div className="flex flex-col sm:flex-row gap-3 sm:gap-4 justify-center">
                     <Button
                       onClick={() => router.push(withNext("/login", "/checkout"))}
                       className="btn-theme-primary w-full sm:w-auto"
                     >
-                      Fazer Login
+                      Entrar
                     </Button>
                     <Button
                       onClick={() => router.push(withNext("/register", "/checkout"))}
                       variant="outline"
                       className="w-full sm:w-auto rounded-[10px] border-border bg-transparent text-foreground hover:bg-[var(--bg-secondary)]"
                     >
-                      Criar Conta
+                      Criar conta
                     </Button>
                   </div>
                 </div>
