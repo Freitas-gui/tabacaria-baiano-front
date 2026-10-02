@@ -3,6 +3,7 @@
 import { Header } from "@/components/header";
 import { Footer } from "@/components/footer";
 import { CheckoutForm } from "@/components/checkout-form";
+import { Toaster } from "@/components/ui/sonner";
 import { Suspense } from "react";
 
 export default function CheckoutPage() {
@@ -17,6 +18,8 @@ export default function CheckoutPage() {
       </Suspense>
       <CheckoutForm />
       <Footer />
+      {/* Hosts the "Desfazer" toast shown when an item is removed from the cart. */}
+      <Toaster position="bottom-center" />
     </div>
   );
 }

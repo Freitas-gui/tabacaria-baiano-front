@@ -16,6 +16,17 @@ type OrderTotalSummaryProps = {
   showFreight?: boolean;
 };
 
+/** Same math the summary displays; the backend recalculates on order creation. */
+export function computeOrderTotal({
+  productsSubtotal,
+  freight,
+  discountAmount = 0,
+  freeShipping = false,
+}: Pick<OrderTotalSummaryProps, "productsSubtotal" | "freight" | "discountAmount" | "freeShipping">): number {
+  const effectiveFreight = freeShipping ? 0 : freight;
+  return Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
+}
+
 export function OrderTotalSummary({
   productsSubtotal,
   freight,
@@ -27,8 +38,7 @@ export function OrderTotalSummary({
   freeShippingRemaining,
   showFreight = true,
 }: OrderTotalSummaryProps) {
-  const effectiveFreight = freeShipping ? 0 : freight;
-  const total = Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
+  const total = computeOrderTotal({ productsSubtotal, freight, discountAmount, freeShipping });
 
   return (
     <div className={compact ? "space-y-2" : "space-y-3"}>

@@ -97,6 +97,8 @@ export function DeliveryRegionField({
               role="combobox"
               aria-expanded={open}
               aria-required={required}
+              aria-invalid={error ? true : undefined}
+              aria-describedby={error ? `${id}-error` : undefined}
               disabled={isDisabled}
               className={cn(
                 "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50",
@@ -150,7 +152,9 @@ export function DeliveryRegionField({
           </PopoverContent>
         </Popover>
         {error && (
-          <p className="mt-1 text-xs sm:text-sm text-red-500">{error}</p>
+          <p id={`${id}-error`} className="mt-1 text-xs sm:text-sm text-destructive">
+            {error}
+          </p>
         )}
         {!loading && !error && regions.length === 0 && (
           <p className="mt-1 text-xs sm:text-sm text-muted-foreground">

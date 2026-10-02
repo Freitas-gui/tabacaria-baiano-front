@@ -22,6 +22,7 @@ interface CartContextType {
   items: CartItem[]
   addToCart: (item: Omit<CartItem, "quantity">) => void
   removeFromCart: (id: string) => void
+  restoreItem: (item: CartItem, index: number) => void
   updateQuantity: (id: string, quantity: number) => void
   getTotalItems: () => number
   getTotalPrice: () => number
@@ -130,6 +131,18 @@ export function CartProvider({ children }: { children: ReactNode }) {
     setItems((currentItems) => currentItems.filter((item) => item.id !== id))
   }
 
+  // Undo for a removal: puts the exact item (quantity, variation) back where it was.
+  const restoreItem = (item: CartItem, index: number) => {
+    setItems((currentItems) => {
+      if (currentItems.some((current) => current.id === item.id)) {
+        return currentItems
+      }
+      const next = [...currentItems]
+      next.splice(Math.min(index, next.length), 0, item)
+      return next
+    })
+  }
+
   const updateQuantity = (id: string, quantity: number) => {
     if (quantity <= 0) {
       removeFromCart(id)
@@ -171,6 +184,7 @@ export function CartProvider({ children }: { children: ReactNode }) {
         items,
         addToCart,
         removeFromCart,
+        restoreItem,
         updateQuantity,
         getTotalItems,
         getTotalPrice,

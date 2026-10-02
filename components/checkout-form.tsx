@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
-import { Switch } from "@/components/ui/switch";
-import { ArrowLeft, Minus, Plus } from "lucide-react";
+import { ArrowLeft, Minus, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { toast } from "sonner";
 import { API_BASE_URL } from "@/lib/api";
 import { resolveCdnUrl } from "@/lib/cdn";
+import { cn } from "@/lib/utils";
 import { getProductPath } from "@/lib/product-slug";
 import {
   formatBrazilianPhone,
@@ -24,22 +25,118 @@ import {
 } from "@/lib/phone";
 import { storePixPaymentForOrder } from "@/lib/pix-payment";
 import { DeliveryRegionField } from "@/components/delivery-region-field";
-import { OrderTotalSummary } from "@/components/order-total-summary";
+import {
+  DeliveryMethodOptions,
+  type DeliveryMethod,
+  type DeliveryMethodOption,
+} from "@/components/delivery-method-options";
+import { OrderTotalSummary, computeOrderTotal } from "@/components/order-total-summary";
 import { useDeliveryRegions } from "@/hooks/use-delivery-regions";
 import { useFreeShippingPromotion } from "@/hooks/use-free-shipping-promotion";
 import { formatCep, isValidCep } from "@/lib/correios-freight";
 import { withNext } from "@/lib/safe-redirect";
+import { STORE_INFO } from "@/lib/store-info";
+import { lookupCep } from "@/lib/viacep";
 import {
   formatCurrency,
   parseRegionPrice,
 } from "@/lib/delivery-regions";
 
 const NATIONAL_SHIPPING_FLAT_FEE = 35;
+const FIND_CEP_URL = "https://buscacepinter.correios.com.br/app/endereco/index.php";
 
 // White fill so editable fields don't read as disabled on the cream card, and an
 // explicit 16px on mobile so iOS Safari doesn't zoom in on focus.
 const fieldClassName = "bg-card text-base md:text-base focus:border-theme-accent";
+const invalidFieldClassName = "border-destructive focus:border-destructive";
 const labelClassName = "block text-xs sm:text-sm font-medium text-theme-primary mb-1";
+
+type FieldKey =
+  | "district"
+  | "zipCode"
+  | "street"
+  | "street_number"
+  | "city"
+  | "state"
+  | "phone";
+type FieldErrors = Partial<Record<FieldKey, string>>;
+
+type CepStatus = "idle" | "loading" | "found" | "partial" | "not_found" | "error";
+
+const FIELD_IDS: Record<FieldKey, string> = {
+  district: "checkout-district",
+  zipCode: "checkout-zip",
+  street: "checkout-street",
+  street_number: "checkout-street-number",
+  city: "checkout-city",
+  state: "checkout-state",
+  phone: "checkout-phone",
+};
+
+/** Laravel validation keys → the field that shows the message. */
+const SERVER_FIELD_KEYS: Record<string, FieldKey> = {
+  phone: "phone",
+  "address.street": "street",
+  "address.street_number": "street_number",
+  "address.district": "district",
+  "address.city": "city",
+  "address.state": "state",
+  "address.postal_code": "zipCode",
+};
+
+function fieldIdFor(key: FieldKey, method: DeliveryMethod): string {
+  // Local delivery picks the district from the region list instead of typing it.
+  if (key === "district" && method === "delivery") {
+    return "checkout-region";
+  }
+  return FIELD_IDS[key];
+}
+
+/** Splits an order-creation error payload into per-field messages and the rest. */
+function readServerErrors(data: unknown): { fields: FieldErrors; messages: string[] } {
+  const fields: FieldErrors = {};
+  const messages: string[] = [];
+  const payload = (data ?? {}) as { errors?: unknown; message?: unknown };
+  const errors = payload.errors;
+
+  if (Array.isArray(errors)) {
+    messages.push(...errors.filter((error): error is string => typeof error === "string"));
+  } else if (errors && typeof errors === "object") {
+    for (const [key, value] of Object.entries(errors as Record<string, unknown>)) {
+      const text = String(Array.isArray(value) ? value[0] : value);
+      const field = SERVER_FIELD_KEYS[key];
+      if (field) {
+        fields[field] = text;
+      } else {
+        messages.push(text);
+      }
+    }
+  } else if (typeof errors === "string" && errors) {
+    messages.push(errors);
+  }
+
+  if (messages.length === 0 && Object.keys(fields).length === 0 && typeof payload.message === "string") {
+    messages.push(payload.message);
+  }
+
+  return { fields, messages };
+}
+
+function scrollToElement(element: HTMLElement | null) {
+  if (!element) return;
+  const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  element.focus({ preventScroll: true });
+  element.scrollIntoView({ block: "center", behavior: reduceMotion ? "auto" : "smooth" });
+}
+
+function FieldError({ id, message }: { id: string; message?: string }) {
+  if (!message) return null;
+  return (
+    <p id={`${id}-error`} className="mt-1 text-xs sm:text-sm text-destructive">
+      {message}
+    </p>
+  );
+}
 
 function resolveCreatedOrderId(data: {
   order_id?: string;
@@ -59,13 +156,20 @@ function resolveCreatedOrderId(data: {
 }
 
 export function CheckoutForm() {
-  const { items, updateQuantity, getTotalPrice, clearCart } = useCart();
+  const { items, updateQuantity, removeFromCart, restoreItem, getTotalPrice, clearCart } =
+    useCart();
   const { user } = useUser();
   const router = useRouter();
   const { regions, loading: loadingRegions, error: regionsError, getRegionByName } =
     useDeliveryRegions();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [deliveryMethod, setDeliveryMethod] = useState<"delivery" | "pickup" | "shipping">("delivery");
+  const [deliveryMethod, setDeliveryMethod] = useState<DeliveryMethod>("delivery");
+  const [errors, setErrors] = useState<FieldErrors>({});
+  const [formError, setFormError] = useState<string | null>(null);
+  const formErrorRef = useRef<HTMLDivElement>(null);
+  const [cepStatus, setCepStatus] = useState<CepStatus>("idle");
+  // Digits of the last CEP sent to ViaCEP, so a saved address isn't overwritten on load.
+  const lastLookedUpCep = useRef("");
   const [pharmacyNames, setPharmacyNames] = useState<Record<string, string>>(
     {},
   );
@@ -94,6 +198,7 @@ export function CheckoutForm() {
 
   useEffect(() => {
     if (user?.address) {
+      lastLookedUpCep.current = (user.address.postal_code || "").replace(/\D/g, "");
       setFormData({
         email: user.email,
         phone: formatBrazilianPhone(user.phone || ""),
@@ -369,10 +474,94 @@ export function CheckoutForm() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, formData.city, selectedRegion?.name, freight, deliveryMethod]);
 
+  // Fills the address from the CEP. Street/city/UF are overwritten because a new
+  // CEP means a new address; the district is only auto-filled for national
+  // shipping, while local delivery uses the region list (matched when possible).
+  useEffect(() => {
+    if (deliveryMethod === "pickup") {
+      return;
+    }
+
+    const digits = formData.zipCode.replace(/\D/g, "");
+    if (digits.length !== 8) {
+      setCepStatus("idle");
+      return;
+    }
+    if (digits === lastLookedUpCep.current) {
+      return;
+    }
+
+    lastLookedUpCep.current = digits;
+    const controller = new AbortController();
+    let settled = false;
+    setCepStatus("loading");
+
+    lookupCep(digits, controller.signal)
+      .then((address) => {
+        settled = true;
+        if (!address) {
+          setCepStatus("not_found");
+          return;
+        }
+
+        const region =
+          deliveryMethod === "delivery" && address.district
+            ? getRegionByName(address.district)
+            : undefined;
+
+        setFormData((current) => ({
+          ...current,
+          street: address.street || current.street,
+          city: address.city || current.city,
+          state: address.state || current.state,
+          district:
+            deliveryMethod === "shipping"
+              ? address.district || current.district
+              : current.district || region?.name || "",
+        }));
+        setErrors((current) => {
+          const next = { ...current };
+          delete next.zipCode;
+          if (address.street) delete next.street;
+          if (address.city) delete next.city;
+          if (address.state) delete next.state;
+          if (deliveryMethod === "shipping" ? address.district : region) delete next.district;
+          return next;
+        });
+        setCepStatus(address.street ? "found" : "partial");
+      })
+      .catch(() => {
+        settled = true;
+        if (controller.signal.aborted) return;
+        // Let the same CEP be retried on the next edit.
+        lastLookedUpCep.current = "";
+        setCepStatus("error");
+      });
+
+    return () => {
+      if (!settled) {
+        controller.abort();
+        lastLookedUpCep.current = "";
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [formData.zipCode, deliveryMethod]);
+
+  const clearFieldError = (key: string) => {
+    if (!(key in FIELD_IDS)) return;
+    setErrors((current) => {
+      if (!current[key as FieldKey]) return current;
+      const next = { ...current };
+      delete next[key as FieldKey];
+      return next;
+    });
+  };
+
   const handleInputChange = (
     e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>,
   ) => {
     const { name, value } = e.target;
+    clearFieldError(name);
     setFormData({
       ...formData,
       [name]:
@@ -385,6 +574,7 @@ export function CheckoutForm() {
   };
 
   const handlePhoneChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    clearFieldError("phone");
     setFormData({
       ...formData,
       phone: formatBrazilianPhone(e.target.value),
@@ -392,62 +582,133 @@ export function CheckoutForm() {
   };
 
   const handleRegionChange = (regionName: string) => {
+    clearFieldError("district");
     setFormData((current) => ({
       ...current,
       district: regionName,
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleDeliveryMethodChange = (method: DeliveryMethod) => {
+    setDeliveryMethod(method);
+    setErrors({});
+    setFormError(null);
+  };
 
-    if (!user || !user.accessToken) {
-      alert("Erro: usuário não autenticado");
+  const handleDecrease = (item: CartItem, index: number) => {
+    if (item.quantity > 1) {
+      updateQuantity(item.id, item.quantity - 1);
       return;
     }
 
-    const stockErrors: string[] = [];
+    removeFromCart(item.id);
+    toast("Item removido do carrinho", {
+      description: item.name,
+      duration: 6000,
+      action: {
+        label: "Desfazer",
+        onClick: () => restoreItem(item, index),
+      },
+    });
+  };
 
-    for (const item of items) {
-      if (!item.pharmacyProductId) {
-        alert(
-          `Produto "${item.name}" não está disponível. Remova o item do carrinho e adicione novamente.`,
-        );
-        return;
-      }
+  const getAvailableStock = (item: CartItem): number | null => {
+    const stock =
+      productStocks[item.id] ?? (item as CartItem & { stock?: number | null }).stock;
+    return stock === undefined || stock === null ? null : stock;
+  };
 
-      const availableStock =
-        productStocks[item.id] ??
-        (item as CartItem & { stock?: number | null }).stock;
-      if (availableStock !== undefined && availableStock !== null) {
-        if (item.quantity > availableStock) {
-          stockErrors.push(
-            `Estoque insuficiente para "${item.name}". Quantidade disponível: ${availableStock}, quantidade solicitada: ${item.quantity}`,
-          );
-        }
-      }
+  const showFieldErrors = (next: FieldErrors) => {
+    setErrors(next);
+    const first = Object.keys(next)[0] as FieldKey | undefined;
+    if (first) {
+      requestAnimationFrame(() =>
+        scrollToElement(document.getElementById(fieldIdFor(first, deliveryMethod))),
+      );
     }
+  };
 
-    if (stockErrors.length > 0) {
-      alert(stockErrors.join("\n"));
-      return;
+  const showFormError = (message: string) => {
+    setFormError(message);
+    requestAnimationFrame(() => scrollToElement(formErrorRef.current));
+  };
+
+  // Insertion order follows the on-screen order, so the first key is the first
+  // field the customer sees.
+  const validateForm = (): FieldErrors => {
+    const next: FieldErrors = {};
+
+    if (deliveryMethod !== "pickup") {
+      if (deliveryMethod === "delivery" && !selectedRegion) {
+        next.district = "Escolha a região de entrega.";
+      }
+      if (!isValidCep(formData.zipCode)) {
+        next.zipCode = "Informe o CEP com 8 dígitos.";
+      }
+      if (!formData.street.trim()) {
+        next.street = "Informe a rua.";
+      }
+      if (!formData.street_number.trim()) {
+        next.street_number = "Informe o número. Se não tiver, use S/N.";
+      }
+      if (deliveryMethod === "shipping" && !formData.district.trim()) {
+        next.district = "Informe o bairro.";
+      }
+      if (!formData.city.trim()) {
+        next.city = "Informe a cidade.";
+      }
+      if (!/^[A-Za-z]{2}$/.test(formData.state.trim())) {
+        next.state = "Informe a UF com 2 letras.";
+      }
     }
 
     if (!isValidBrazilianPhone(formData.phone)) {
-      alert("Informe um telefone válido com DDD (10 ou 11 dígitos).");
+      next.phone = "Informe um telefone com DDD.";
+    }
+
+    return next;
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setFormError(null);
+
+    if (!user || !user.accessToken) {
+      showFormError("Sua sessão expirou. Entre na sua conta de novo para finalizar.");
       return;
     }
 
-    if (deliveryMethod === "delivery" && !selectedRegion) {
-      alert("Selecione uma região de entrega válida.");
+    const unavailableItem = items.find((item) => !item.pharmacyProductId);
+    if (unavailableItem) {
+      showFormError(
+        `"${unavailableItem.name}" não está mais disponível. Remova o item do carrinho e adicione de novo.`,
+      );
       return;
     }
 
-    if (deliveryMethod === "shipping" && !isValidCep(formData.zipCode)) {
-      alert("Informe um CEP válido para o envio.");
+    const overStock = items.filter((item) => {
+      const stock = getAvailableStock(item);
+      return stock !== null && item.quantity > stock;
+    });
+    if (overStock.length > 0) {
+      const [only] = overStock;
+      showFormError(
+        overStock.length > 1
+          ? "Alguns itens têm menos unidades em estoque do que no carrinho. Ajuste os itens marcados para continuar."
+          : getAvailableStock(only) === 0
+            ? `"${only.name}" esgotou. Remova o item para continuar.`
+            : `"${only.name}" tem menos unidades em estoque do que no carrinho. Diminua a quantidade para continuar.`,
+      );
       return;
     }
 
+    const fieldErrors = validateForm();
+    if (Object.keys(fieldErrors).length > 0) {
+      showFieldErrors(fieldErrors);
+      return;
+    }
+
+    setErrors({});
     setIsSubmitting(true);
 
     try {
@@ -511,32 +772,31 @@ export function CheckoutForm() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          // Without it Laravel answers auth failures with an HTML redirect instead of JSON.
+          Accept: "application/json",
           Authorization: `Bearer ${user.accessToken}`,
         },
         body: JSON.stringify(requestBody),
       });
 
-      const data = await response.json();
+      const data = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        let errorMessage = "Erro ao criar pedido";
+      if (response.status === 401) {
+        showFormError("Sua sessão expirou. Entre na sua conta de novo para finalizar a compra.");
+        setIsSubmitting(false);
+        return;
+      }
 
-        if (data.errors && Array.isArray(data.errors)) {
-          const stockErrors = data.errors.filter((err: string) =>
-            err.includes("Estoque insuficiente"),
+      if (!response.ok || !data) {
+        const { fields, messages } = readServerErrors(data);
+        if (Object.keys(fields).length > 0) {
+          showFieldErrors(fields);
+          if (messages.length > 0) setFormError(messages.join("\n"));
+        } else {
+          showFormError(
+            messages.join("\n") || "Não foi possível criar o pedido. Tente de novo.",
           );
-          if (stockErrors.length > 0) {
-            errorMessage = stockErrors.join("\n");
-          } else {
-            errorMessage = data.errors.join("\n");
-          }
-        } else if (data.message) {
-          errorMessage = data.message;
-        } else if (typeof data.errors === "string") {
-          errorMessage = data.errors;
         }
-
-        alert(`Erro: ${errorMessage}`);
         setIsSubmitting(false);
         return;
       }
@@ -562,17 +822,76 @@ export function CheckoutForm() {
       clearCart();
       setAppliedCoupon(null);
       setCouponCode("");
-      alert(
-        data.message ||
-          "Pedido criado com sucesso. Aguarde a confirmação do pagamento.",
-      );
       router.push("/pedidos");
       setIsSubmitting(false);
     } catch (error) {
       console.error("Error creating order:", error);
-      alert("Erro ao conectar com o servidor. Tente novamente.");
+      showFormError("Não conseguimos falar com o servidor. Confira sua conexão e tente de novo.");
       setIsSubmitting(false);
     }
+  };
+
+  // Free-shipping preview per option; the backend recalculates on order creation.
+  const subtotalAfterDiscountCents = Math.round((productsSubtotal - discountAmount) * 100);
+  const isFreeFor = (method: DeliveryMethod) =>
+    (isFreeShippingCoupon && method === deliveryMethod) ||
+    (method !== "pickup" &&
+      freeShippingPromotion.active &&
+      freeShippingPromotion.deliveryMethods.includes(method) &&
+      subtotalAfterDiscountCents >= (freeShippingPromotion.minOrderAmountCents ?? 0));
+
+  const deliveryOptions: DeliveryMethodOption[] = [
+    {
+      value: "delivery",
+      title: "Entrega local",
+      description: "Porto Seguro e região. O frete depende do bairro.",
+      price: isFreeFor("delivery")
+        ? "Grátis"
+        : selectedRegion
+          ? formatCurrency(parseRegionPrice(selectedRegion.price))
+          : "Pelo bairro",
+    },
+    {
+      value: "pickup",
+      title: "Retirar na loja",
+      description: STORE_INFO.addressLine1,
+      price: "Grátis",
+    },
+    {
+      value: "shipping",
+      title: "Envio nacional",
+      description: "Para qualquer endereço do Brasil, com taxa fixa.",
+      price: isFreeFor("shipping") ? "Grátis" : formatCurrency(NATIONAL_SHIPPING_FLAT_FEE),
+    },
+  ];
+
+  const orderTotal = computeOrderTotal({
+    productsSubtotal,
+    freight,
+    discountAmount,
+    freeShipping: isFreeShipping,
+  });
+  // Without a region the freight is still unknown, so don't promise an amount yet.
+  const totalIsKnown = deliveryMethod !== "delivery" || Boolean(selectedRegion);
+
+  const fieldProps = (key: FieldKey) => {
+    const id = fieldIdFor(key, deliveryMethod);
+    const message = errors[key];
+    return {
+      id,
+      "aria-invalid": message ? true : undefined,
+      "aria-describedby": message ? `${id}-error` : undefined,
+      className: cn(fieldClassName, message && invalidFieldClassName),
+    };
+  };
+
+  const cepHint: Record<CepStatus, string | null> = {
+    idle: null,
+    loading: "Buscando endereço…",
+    found: "Endereço preenchido pelo CEP. Confira e informe o número.",
+    partial: "Esse é o CEP geral da cidade. Preencha a rua.",
+    not_found: "Não encontramos esse CEP. Confira os números ou preencha o endereço.",
+    error: "Não foi possível buscar o CEP agora. Preencha o endereço.",
   };
 
   if (items.length === 0) {
@@ -595,6 +914,9 @@ export function CheckoutForm() {
       </div>
     );
   }
+
+  const zipProps = fieldProps("zipCode");
+  const zipHint = cepHint[cepStatus];
 
   return (
     <div className="container mx-auto px-2 sm:px-4 py-4 sm:py-8">
@@ -622,111 +944,119 @@ export function CheckoutForm() {
           <Card className="card-static">
             <CardContent className="p-3 sm:p-6">
               <div className="space-y-3 sm:space-y-4">
-                {items.map((item) => (
-                  <div key={item.id} className="p-3 sm:p-4 border rounded">
-                    <Link
-                      href={getProductPath(item)}
-                      className="block font-medium text-theme-primary text-xs sm:text-sm line-clamp-2 hover:underline"
-                    >
-                      {item.name}
-                    </Link>
-                    {item.variationOptionName && (
-                      <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
-                        {item.variationTypeName
-                          ? `${item.variationTypeName}: `
-                          : ""}
-                        {item.variationOptionName}
-                      </span>
-                    )}
+                {items.map((item, index) => {
+                  const availableStock = getAvailableStock(item);
+                  const isMaxReached =
+                    availableStock !== null && item.quantity >= availableStock;
+                  const isOverStock =
+                    availableStock !== null && item.quantity > availableStock;
 
-                    <div className="flex items-center gap-3 mt-2">
+                  return (
+                    <div key={item.id} className="p-3 sm:p-4 border rounded">
                       <Link
                         href={getProductPath(item)}
-                        className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden"
+                        className="block font-medium text-theme-primary text-xs sm:text-sm line-clamp-2 hover:underline"
                       >
-                        <Image
-                          src={
-                            resolveCdnUrl(item.image) ||
-                            "/placeholder.svg?height=80&width=80"
-                          }
-                          alt={item.name}
-                          width={80}
-                          height={80}
-                          className="w-16 h-16 sm:w-20 sm:h-20 object-contain p-1"
-                          onError={(e) => {
-                            const target = e.target as HTMLImageElement;
-                            target.src = "/placeholder.svg?height=80&width=80";
-                          }}
-                        />
+                        {item.name}
                       </Link>
+                      {item.variationOptionName && (
+                        <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary">
+                          {item.variationTypeName
+                            ? `${item.variationTypeName}: `
+                            : ""}
+                          {item.variationOptionName}
+                        </span>
+                      )}
 
-                      <div className="flex flex-1 min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div className="min-w-0 whitespace-nowrap">
-                          <p className="text-base sm:text-lg font-bold text-theme-primary">
-                            {formatCurrency(parseRegionPrice(item.price) * item.quantity)}
-                          </p>
-                          {item.quantity > 1 && (
-                            <p className="text-xs sm:text-sm text-theme-secondary">
-                              {formatCurrency(parseRegionPrice(item.price))} cada
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="flex flex-shrink-0 items-center space-x-2">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() =>
-                              updateQuantity(item.id, item.quantity - 1)
+                      <div className="flex items-center gap-3 mt-2">
+                        <Link
+                          href={getProductPath(item)}
+                          className="flex-shrink-0 aspect-square bg-gray-50 rounded overflow-hidden"
+                        >
+                          <Image
+                            src={
+                              resolveCdnUrl(item.image) ||
+                              "/placeholder.svg?height=80&width=80"
                             }
-                            className="text-theme-secondary hover:bg-muted h-8 w-8 p-0"
-                          >
-                            <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
-                          </Button>
-                          <span className="w-6 sm:w-8 text-center text-sm">
-                            {item.quantity}
-                          </span>
-                          {(() => {
-                            const availableStock =
-                              productStocks[item.id] ??
-                              (item as CartItem & { stock?: number | null })
-                                .stock;
-                            const maxQuantity =
-                              availableStock !== undefined &&
-                              availableStock !== null
-                                ? availableStock
-                                : Infinity;
-                            const isMaxReached = item.quantity >= maxQuantity;
-                            return (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => {
-                                  if (!isMaxReached) {
-                                    updateQuantity(item.id, item.quantity + 1);
-                                  } else {
-                                    alert(
-                                      `Estoque máximo disponível: ${maxQuantity}`,
-                                    );
-                                  }
-                                }}
-                                disabled={isMaxReached}
-                                className="text-theme-secondary hover:bg-muted h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
-                                title={
-                                  isMaxReached
-                                    ? `Estoque máximo: ${maxQuantity}`
-                                    : "Aumentar quantidade"
-                                }
-                              >
-                                <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
-                              </Button>
-                            );
-                          })()}
+                            alt={item.name}
+                            width={80}
+                            height={80}
+                            className="w-16 h-16 sm:w-20 sm:h-20 object-contain p-1"
+                            onError={(e) => {
+                              const target = e.target as HTMLImageElement;
+                              target.src = "/placeholder.svg?height=80&width=80";
+                            }}
+                          />
+                        </Link>
+
+                        <div className="flex flex-1 min-w-0 flex-col items-start gap-2 sm:flex-row sm:items-center sm:justify-between">
+                          <div className="min-w-0 whitespace-nowrap">
+                            <p className="text-base sm:text-lg font-bold text-theme-primary">
+                              {formatCurrency(parseRegionPrice(item.price) * item.quantity)}
+                            </p>
+                            {item.quantity > 1 && (
+                              <p className="text-xs sm:text-sm text-theme-secondary">
+                                {formatCurrency(parseRegionPrice(item.price))} cada
+                              </p>
+                            )}
+                          </div>
+
+                          <div className="flex flex-shrink-0 items-center space-x-2">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDecrease(item, index)}
+                              aria-label={
+                                item.quantity === 1
+                                  ? `Remover ${item.name} do carrinho`
+                                  : `Diminuir quantidade de ${item.name}`
+                              }
+                              className="text-theme-secondary hover:bg-muted h-8 w-8 p-0"
+                            >
+                              {item.quantity === 1 ? (
+                                <Trash2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                              ) : (
+                                <Minus className="w-3 h-3 sm:w-4 sm:h-4" />
+                              )}
+                            </Button>
+                            <span className="w-6 sm:w-8 text-center text-sm" aria-live="polite">
+                              {item.quantity}
+                            </span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => updateQuantity(item.id, item.quantity + 1)}
+                              disabled={isMaxReached}
+                              aria-label={`Aumentar quantidade de ${item.name}`}
+                              className="text-theme-secondary hover:bg-muted h-8 w-8 p-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              <Plus className="w-3 h-3 sm:w-4 sm:h-4" />
+                            </Button>
+                          </div>
                         </div>
                       </div>
+
+                      {isMaxReached && availableStock !== null && (
+                        <p
+                          className={cn(
+                            "mt-2 text-xs sm:text-sm",
+                            isOverStock ? "text-destructive" : "text-muted-foreground",
+                          )}
+                        >
+                          {availableStock === 0
+                            ? "Esgotado. Remova o item para continuar."
+                            : isOverStock
+                            ? `Só ${availableStock} em estoque. Diminua a quantidade.`
+                            : availableStock === 1
+                              ? "Última unidade em estoque."
+                              : `Só ${availableStock} em estoque.`}
+                        </p>
+                      )}
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
 
               <Separator className="my-3 sm:my-4" />
@@ -818,76 +1148,113 @@ export function CheckoutForm() {
             <Card className="card-static">
               <CardHeader className="bg-muted/60 border-b border-border p-3 sm:p-6">
                 <CardTitle className="text-base sm:text-lg text-theme-primary">
-                  Dados de Entrega
+                  Entrega e pagamento
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 sm:p-6">
                 <form
                   onSubmit={handleSubmit}
+                  noValidate
                   className="space-y-3 sm:space-y-4 mt-2 sm:mt-4"
                 >
-                  <div className="space-y-2">
-                    <p className="text-sm font-medium text-theme-primary">Como deseja receber?</p>
-                    {(
-                      [
-                        { value: "delivery", label: "Entrega local (Porto Seguro)" },
-                        { value: "pickup", label: "Retirar na loja" },
-                        { value: "shipping", label: "Envio nacional" },
-                      ] as const
-                    ).map((option) => (
-                      <label
-                        key={option.value}
-                        htmlFor={`delivery-method-${option.value}`}
-                        className="flex items-center gap-2 cursor-pointer"
-                      >
-                        <Switch
-                          id={`delivery-method-${option.value}`}
-                          checked={deliveryMethod === option.value}
-                          onCheckedChange={(checked) => {
-                            if (checked) setDeliveryMethod(option.value);
-                          }}
-                        />
-                        <span className="text-sm text-theme-primary">{option.label}</span>
-                      </label>
-                    ))}
-                  </div>
+                  <DeliveryMethodOptions
+                    options={deliveryOptions}
+                    value={deliveryMethod}
+                    onChange={handleDeliveryMethodChange}
+                    disabled={isSubmitting}
+                  />
 
                   {deliveryMethod !== "pickup" ? (
                     <>
-                    <p className="text-sm font-medium text-theme-primary">
-                      Endereço para entrega
-                    </p>
+                      <p className="pt-1 text-sm font-medium text-theme-primary">
+                        Endereço para entrega
+                      </p>
+
+                      {deliveryMethod === "delivery" && (
+                        <DeliveryRegionField
+                          id="checkout-region"
+                          regions={regions}
+                          value={formData.district}
+                          onChange={handleRegionChange}
+                          loading={loadingRegions}
+                          error={regionsError ?? errors.district ?? null}
+                          disabled={isSubmitting}
+                          selectClassName={cn("bg-card", errors.district && invalidFieldClassName)}
+                        />
+                      )}
+
+                      <div>
+                        <div className="flex items-baseline justify-between gap-2">
+                          <label htmlFor="checkout-zip" className={labelClassName}>
+                            CEP *
+                          </label>
+                          <a
+                            href={FIND_CEP_URL}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs sm:text-sm text-theme-accent underline-offset-2 hover:underline"
+                          >
+                            Não sei meu CEP
+                          </a>
+                        </div>
+                        <Input
+                          {...zipProps}
+                          aria-describedby={
+                            [zipProps["aria-describedby"], zipHint ? "checkout-zip-hint" : null]
+                              .filter(Boolean)
+                              .join(" ") || undefined
+                          }
+                          autoComplete="postal-code"
+                          inputMode="numeric"
+                          name="zipCode"
+                          value={formData.zipCode}
+                          onChange={handleInputChange}
+                          required
+                          placeholder="00000-000"
+                        />
+                        <FieldError id="checkout-zip" message={errors.zipCode} />
+                        {zipHint && !errors.zipCode && (
+                          <p
+                            id="checkout-zip-hint"
+                            aria-live="polite"
+                            className="mt-1 text-xs sm:text-sm text-muted-foreground"
+                          >
+                            {zipHint}
+                          </p>
+                        )}
+                      </div>
+
                       <div>
                         <label htmlFor="checkout-street" className={labelClassName}>
                           Rua *
                         </label>
                         <Input
-                          id="checkout-street"
+                          {...fieldProps("street")}
                           autoComplete="address-line1"
                           name="street"
                           value={formData.street}
                           onChange={handleInputChange}
                           required
                           placeholder="Nome da rua"
-                          className={fieldClassName}
                         />
+                        <FieldError id="checkout-street" message={errors.street} />
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
+                      <div className="grid grid-cols-2 gap-3 sm:gap-4">
                         <div>
                           <label htmlFor="checkout-street-number" className={labelClassName}>
                             Número *
                           </label>
                           <Input
-                            id="checkout-street-number"
+                            {...fieldProps("street_number")}
                             autoComplete="off"
                             name="street_number"
                             value={formData.street_number}
                             onChange={handleInputChange}
                             required
                             placeholder="123"
-                            className={fieldClassName}
                           />
+                          <FieldError id="checkout-street-number" message={errors.street_number} />
                         </div>
                         <div>
                           <label htmlFor="checkout-address-details" className={labelClassName}>
@@ -899,89 +1266,62 @@ export function CheckoutForm() {
                             name="address_details"
                             value={formData.address_details}
                             onChange={handleInputChange}
-                            placeholder="Apto, Bloco, etc"
+                            placeholder="Apto, bloco"
                             className={fieldClassName}
                           />
                         </div>
                       </div>
 
-                      {deliveryMethod === "delivery" ? (
-                        <DeliveryRegionField
-                          id="checkout-region"
-                          regions={regions}
-                          value={formData.district}
-                          onChange={handleRegionChange}
-                          loading={loadingRegions}
-                          error={regionsError}
-                          disabled={isSubmitting}
-                          selectClassName="bg-card"
-                        />
-                      ) : (
+                      {deliveryMethod === "shipping" && (
                         <div>
                           <label htmlFor="checkout-district" className={labelClassName}>
                             Bairro *
                           </label>
                           <Input
-                            id="checkout-district"
+                            {...fieldProps("district")}
                             autoComplete="address-level3"
                             name="district"
                             value={formData.district}
                             onChange={handleInputChange}
                             required
                             placeholder="Seu bairro"
-                            className={fieldClassName}
                           />
+                          <FieldError id="checkout-district" message={errors.district} />
                         </div>
                       )}
 
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 sm:gap-4">
+                      <div className="grid grid-cols-[1fr_5.5rem] gap-3 sm:gap-4">
                         <div>
                           <label htmlFor="checkout-city" className={labelClassName}>
                             Cidade *
                           </label>
                           <Input
-                            id="checkout-city"
+                            {...fieldProps("city")}
                             autoComplete="address-level2"
                             name="city"
                             value={formData.city}
                             onChange={handleInputChange}
                             required
                             placeholder="Sua cidade"
-                            className={fieldClassName}
                           />
+                          <FieldError id="checkout-city" message={errors.city} />
                         </div>
                         <div>
                           <label htmlFor="checkout-state" className={labelClassName}>
-                            Estado *
+                            UF *
                           </label>
                           <Input
-                            id="checkout-state"
+                            {...fieldProps("state")}
                             autoComplete="address-level1"
                             autoCapitalize="characters"
                             name="state"
                             value={formData.state}
                             onChange={handleInputChange}
                             required
-                            placeholder="UF"
+                            placeholder="BA"
                             maxLength={2}
-                            className={fieldClassName}
                           />
-                        </div>
-                        <div>
-                          <label htmlFor="checkout-zip" className={labelClassName}>
-                            CEP *
-                          </label>
-                          <Input
-                            id="checkout-zip"
-                            autoComplete="postal-code"
-                            inputMode="numeric"
-                            name="zipCode"
-                            value={formData.zipCode}
-                            onChange={handleInputChange}
-                            required
-                            placeholder="00000-000"
-                            className={fieldClassName}
-                          />
+                          <FieldError id="checkout-state" message={errors.state} />
                         </div>
                       </div>
 
@@ -1004,15 +1344,26 @@ export function CheckoutForm() {
                       )}
                     </>
                   ) : (
-                    <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4">
-                      <p className="text-xs sm:text-sm font-medium text-theme-primary">
-                        Retirar na loja
-                      </p>
-                      <p className="text-xs sm:text-sm text-muted-foreground mt-1">
-                        Rua Dona Candi, 46, bairro Pacatá
+                    <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 text-xs sm:text-sm">
+                      <p className="font-medium text-theme-primary">Onde retirar</p>
+                      <p className="text-muted-foreground mt-1">
+                        {STORE_INFO.addressLine1}
                         <br />
-                        Porto Seguro — BA, CEP 45810-000
+                        {STORE_INFO.addressLine2}
                       </p>
+                      <p className="text-muted-foreground mt-2">
+                        {STORE_INFO.hoursWeekdays}
+                        <br />
+                        {STORE_INFO.hoursSaturday}
+                      </p>
+                      <a
+                        href={STORE_INFO.mapsUrl}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="mt-2 inline-block text-theme-accent underline-offset-2 hover:underline"
+                      >
+                        Ver no mapa
+                      </a>
                     </div>
                   )}
 
@@ -1021,7 +1372,7 @@ export function CheckoutForm() {
                       Telefone *
                     </label>
                     <Input
-                      id="checkout-phone"
+                      {...fieldProps("phone")}
                       autoComplete="tel-national"
                       name="phone"
                       type="tel"
@@ -1030,8 +1381,8 @@ export function CheckoutForm() {
                       onChange={handlePhoneChange}
                       required
                       placeholder="(73) 99999-9999"
-                      className={fieldClassName}
                     />
+                    <FieldError id="checkout-phone" message={errors.phone} />
                   </div>
 
                   <div className="rounded-md border border-border bg-muted/40 p-3 sm:p-4 space-y-3">
@@ -1054,16 +1405,36 @@ export function CheckoutForm() {
                     />
                   </div>
 
+                  <div>
+                    <p className="text-sm font-medium text-theme-primary">Pagamento</p>
+                    <p className="mt-1 text-xs sm:text-sm text-muted-foreground">
+                      PIX. Depois de confirmar, você recebe o QR Code e o código copia e
+                      cola. O pedido é confirmado assim que o pagamento cair.
+                    </p>
+                  </div>
+
+                  {formError && (
+                    <div
+                      ref={formErrorRef}
+                      tabIndex={-1}
+                      role="alert"
+                      className="whitespace-pre-line rounded-md border border-destructive/40 bg-destructive/10 p-3 text-sm text-destructive focus:outline-none"
+                    >
+                      {formError}
+                    </div>
+                  )}
+
                   <Button
                     type="submit"
-                    disabled={
-                      isSubmitting ||
-                      (deliveryMethod === "delivery" &&
-                        (loadingRegions || !selectedRegion))
-                    }
+                    disabled={isSubmitting}
+                    aria-busy={isSubmitting}
                     className="w-full btn-theme-primary py-2 sm:py-3 text-sm sm:text-lg"
                   >
-                    {isSubmitting ? "Processando..." : "Finalizar Compra"}
+                    {isSubmitting
+                      ? "Gerando seu PIX…"
+                      : totalIsKnown
+                        ? `Gerar PIX de ${formatCurrency(orderTotal)}`
+                        : "Gerar PIX"}
                   </Button>
                 </form>
               </CardContent>
@@ -1072,7 +1443,7 @@ export function CheckoutForm() {
             <Card className="card-static">
               <CardHeader className="bg-muted/60 border-b border-border p-3 sm:p-6">
                 <CardTitle className="text-base sm:text-lg text-theme-primary">
-                  Dados de Entrega
+                  Entrega e pagamento
                 </CardTitle>
               </CardHeader>
               <CardContent className="p-3 sm:p-6">
