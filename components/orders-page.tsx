@@ -25,9 +25,11 @@ import {
   MapPin,
   CreditCard,
   MessageCircle,
+  XCircle,
 } from "lucide-react";
 import Image from "next/image";
-import { useState, useEffect, useCallback } from "react";
+import Link from "next/link";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useUser } from "@/contexts/user-context";
 import { API_BASE_URL } from "@/lib/api";
@@ -43,6 +45,7 @@ import {
 import { formatCurrency } from "@/lib/delivery-regions";
 import { OrderTotalSummary } from "@/components/order-total-summary";
 import { STORE_INFO } from "@/lib/store-info";
+import { withNext } from "@/lib/safe-redirect";
 
 interface VariationOption {
   typeName: string;
@@ -69,7 +72,10 @@ interface Order {
     | "Preparando"
     | "Aguardando Confirmação"
     | "Confirmado"
-    | "Cancelado";
+    | "Cancelado"
+    | "Em andamento";
+  /** Mirrors the API rule: customers may only cancel while waiting_confirmation. */
+  canCancel: boolean;
   items: OrderItem[];
   total: string;
   productsSubtotal: number;
@@ -77,6 +83,8 @@ interface Order {
   /** Original fee waived by the free-shipping promotion, when it applied. */
   freeShippingPromotionFee: number | null;
   discountAmount: number;
+  /** Manual adjustment the store applied to the order (negative = discount). */
+  priceAdjustment: number;
   couponCode?: string | null;
   couponDiscountType?: string | null;
   deliveryMethod: "delivery" | "pickup";
@@ -87,6 +95,11 @@ interface Order {
   paymentProvider?: string | null;
   pixPayment?: PixPaymentPayload | null;
   estimatedDelivery?: string;
+}
+
+/** OrderProduct.price comes from the API as a decimal string ("12.50"). */
+function parseItemPrice(price: string): number {
+  return Number.parseFloat(price.replace(",", ".")) || 0;
 }
 
 function mapApiOrder(order: any): Order {
@@ -139,9 +152,10 @@ function mapApiOrder(order: any): Order {
     ? Number.parseFloat(order.free_shipping_promotion_fee) || 0
     : null;
   const discountAmount = Number.parseFloat(order.discount_amount || "0") || 0;
+  const priceAdjustment = Number.parseFloat(order.price_adjustment || "0") || 0;
   const productsSubtotal = items.reduce(
     (sum, item) =>
-      sum + Number.parseFloat(item.price.replace(",", ".")) * item.quantity,
+      sum + parseItemPrice(item.price) * item.quantity,
     0,
   );
 
@@ -150,12 +164,14 @@ function mapApiOrder(order: any): Order {
     orderNumber: order.code,
     date: order.created_at,
     status: mapStatus(order.status_label || order.status),
+    canCancel: order.status === "waiting_confirmation",
     items,
     total: order.total || "0",
     productsSubtotal,
     deliveryFee,
     freeShippingPromotionFee,
     discountAmount,
+    priceAdjustment,
     couponCode: order.coupon_code ?? null,
     couponDiscountType: order.discount_type ?? null,
     deliveryMethod,
@@ -169,7 +185,6 @@ function mapApiOrder(order: any): Order {
 }
 
 function mapStatus(status: string): Order["status"] {
-  if (!status) return "Aguardando Confirmação";
 
   const statusMap: Record<string, Order["status"]> = {
     Entregue: "Entregue",
@@ -184,7 +199,9 @@ function mapStatus(status: string): Order["status"] {
     waiting_confirmation: "Aguardando Confirmação",
     canceled: "Cancelado",
   };
-  return statusMap[status] || "Aguardando Confirmação";
+  // A status the storefront doesn't know yet must not look like (or be
+  // cancellable as) a pending order.
+  return statusMap[status] || "Em andamento";
 }
 
 function getPaymentStatusLabel(status?: string | null): string | null {
@@ -200,17 +217,29 @@ function getPaymentStatusLabel(status?: string | null): string | null {
   return labels[status] || status;
 }
 
+/** The backend total is the source of truth (it includes the store's manual adjustment). */
+function getOrderTotal(order: Order): number {
+  const fromServer = Number.parseFloat(order.total);
+  if (Number.isFinite(fromServer)) return fromServer;
+
+  const freeShipping =
+    order.couponDiscountType === "free_shipping" ||
+    order.freeShippingPromotionFee !== null;
+  return Math.max(
+    0,
+    order.productsSubtotal +
+      order.priceAdjustment +
+      (freeShipping ? 0 : order.deliveryFee) -
+      order.discountAmount,
+  );
+}
+
 function buildWhatsAppTrackingUrl(order: Order): string {
   const itemsList = order.items
     .map((item) => `* ${item.quantity}x ${item.name}`)
     .join("\n");
 
-  const freeShipping = order.couponDiscountType === "free_shipping";
-  const effectiveFreight = freeShipping ? 0 : order.deliveryFee;
-  const total = Math.max(
-    0,
-    order.productsSubtotal + effectiveFreight - order.discountAmount,
-  );
+  const total = getOrderTotal(order);
 
   const message = [
     "Salve tropa do baiano, gostaria de acompanhar meu pedido.",
@@ -233,29 +262,31 @@ function buildWhatsAppTrackingUrl(order: Order): string {
 }
 
 export function OrdersPage() {
-  const { user } = useUser();
+  const { user, isLoading: userLoading, logout } = useUser();
   const router = useRouter();
   const searchParams = useSearchParams();
   const orderIdFromUrl = searchParams.get("orderId");
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [loadingOrderDetails, setLoadingOrderDetails] = useState(false);
+  const [error, setError] = useState(false);
+  const [detailError, setDetailError] = useState<{
+    message: string;
+    canRetry: boolean;
+  } | null>(null);
   const [cancelDialogOrderId, setCancelDialogOrderId] = useState<string | null>(null);
   const [cancelingOrderId, setCancelingOrderId] = useState<string | null>(null);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  // Order the URL currently points at; responses for any other order are stale.
+  const activeOrderIdRef = useRef<string | null>(orderIdFromUrl);
 
   const loadOrders = useCallback(async () => {
-    if (!user || !user.accessToken) {
-      setLoading(false);
-      setError("Usuário não autenticado");
-      return;
-    }
+    if (!user?.accessToken) return;
 
+    let sessionExpired = false;
     try {
       setLoading(true);
-      setError(null);
+      setError(false);
 
       const response = await fetch(`${API_BASE_URL}/api/customer/orders`, {
         method: "GET",
@@ -264,6 +295,13 @@ export function OrdersPage() {
           Authorization: `Bearer ${user.accessToken}`,
         },
       });
+
+      if (response.status === 401) {
+        // Expired token: dropping the user sends them to login (effect below).
+        sessionExpired = true;
+        logout();
+        return;
+      }
 
       if (!response.ok) {
         throw new Error("Erro ao carregar pedidos");
@@ -278,26 +316,29 @@ export function OrdersPage() {
       }
     } catch (err) {
       console.error("Error loading orders:", err);
-      setError("Erro ao carregar os pedidos. Tente novamente.");
+      setError(true);
     } finally {
-      setLoading(false);
+      if (!sessionExpired) setLoading(false);
     }
-  }, [user]);
+  }, [user, logout]);
 
+  // Wait for the stored session before deciding anything, otherwise the page
+  // flashes an error on every visit. No session → login, then back here.
   useEffect(() => {
-    loadOrders();
-  }, [loadOrders]);
-
-  const fetchOrderDetails = useCallback(async (orderId: string, silent = false) => {
-    if (!user || !user.accessToken) {
-      if (!silent) {
-        alert("Usuário não autenticado");
-      }
+    if (userLoading) return;
+    if (!user?.accessToken) {
+      const here = `${window.location.pathname}${window.location.search}`;
+      router.replace(withNext("/login", here));
       return;
     }
+    loadOrders();
+  }, [userLoading, user?.accessToken, loadOrders, router]);
+
+  const fetchOrderDetails = useCallback(async (orderId: string, silent = false) => {
+    if (!user?.accessToken) return;
 
     if (!silent) {
-      setLoadingOrderDetails(true);
+      setDetailError(null);
     }
     try {
       const response = await fetch(
@@ -311,40 +352,62 @@ export function OrdersPage() {
         },
       );
 
+      if (response.status === 401) {
+        logout();
+        return;
+      }
+
+      if (activeOrderIdRef.current !== orderId) return;
+
+      if (response.status === 403 || response.status === 404) {
+        if (!silent) {
+          setDetailError({
+            message: "Não encontramos esse pedido na sua conta.",
+            canRetry: false,
+          });
+        }
+        return;
+      }
+
       if (!response.ok) {
         throw new Error("Erro ao carregar detalhes do pedido");
       }
 
       const data = await response.json();
 
-      if (data.success && data.data) {
-        const mappedOrder = mapApiOrder(data.data);
-        const storedPixPayment = readStoredPixPaymentForOrder(orderId);
-
-        if (!mappedOrder.pixPayment && storedPixPayment) {
-          mappedOrder.pixPayment = storedPixPayment;
-        }
-
-        if (
-          mappedOrder.paymentStatus &&
-          ["paid", "expired", "cancelled", "canceled", "failed", "refunded"].includes(
-            mappedOrder.paymentStatus,
-          )
-        ) {
-          clearStoredPixPaymentForOrder(orderId);
-        }
-
-        setSelectedOrder(mappedOrder);
+      if (!data.success || !data.data) {
+        throw new Error("Resposta inválida ao carregar o pedido");
       }
+
+      if (activeOrderIdRef.current !== orderId) return;
+
+      const mappedOrder = mapApiOrder(data.data);
+      const storedPixPayment = readStoredPixPaymentForOrder(orderId);
+
+      if (!mappedOrder.pixPayment && storedPixPayment) {
+        mappedOrder.pixPayment = storedPixPayment;
+      }
+
+      if (
+        mappedOrder.paymentStatus &&
+        ["paid", "expired", "cancelled", "canceled", "failed", "refunded"].includes(
+          mappedOrder.paymentStatus,
+        )
+      ) {
+        clearStoredPixPaymentForOrder(orderId);
+      }
+
+      setSelectedOrder(mappedOrder);
     } catch (err) {
       console.error("Error loading order details:", err);
-      alert("Erro ao carregar detalhes do pedido. Tente novamente.");
-    } finally {
-      if (!silent) {
-        setLoadingOrderDetails(false);
+      if (!silent && activeOrderIdRef.current === orderId) {
+        setDetailError({
+          message: "Verifique sua conexão e tente de novo.",
+          canRetry: true,
+        });
       }
     }
-  }, [user]);
+  }, [user, logout]);
 
   const openCancelDialog = (orderId: string) => {
     setCancelError(null);
@@ -358,10 +421,7 @@ export function OrdersPage() {
 
   const confirmCancelOrder = useCallback(
     async (orderId: string, context: "list" | "detail") => {
-      if (!user || !user.accessToken) {
-        setCancelError("Usuário não autenticado");
-        return;
-      }
+      if (!user?.accessToken) return;
 
       setCancelingOrderId(orderId);
       setCancelError(null);
@@ -378,10 +438,21 @@ export function OrdersPage() {
           },
         );
 
-        const data = await response.json();
+        if (response.status === 401) {
+          setCancelDialogOrderId(null);
+          logout();
+          return;
+        }
+
+        const data = await response.json().catch(() => ({}));
 
         if (!response.ok) {
-          throw new Error(data.message || "Erro ao cancelar pedido");
+          // 422 carries a customer-facing reason ("não pode mais ser cancelado").
+          throw new Error(
+            response.status === 422 && data.message
+              ? data.message
+              : "Não foi possível cancelar o pedido. Tente de novo.",
+          );
         }
 
         setCancelDialogOrderId(null);
@@ -393,19 +464,30 @@ export function OrdersPage() {
         }
       } catch (err) {
         setCancelError(
-          err instanceof Error ? err.message : "Erro ao cancelar pedido",
+          err instanceof Error
+            ? err.message
+            : "Não foi possível cancelar o pedido. Tente de novo.",
         );
       } finally {
         setCancelingOrderId(null);
       }
     },
-    [user, fetchOrderDetails, loadOrders],
+    [user, logout, fetchOrderDetails, loadOrders],
   );
 
+  // The URL decides the view: going back (button or gesture) to /pedidos must
+  // leave the detail, and opening another order must not show the previous one.
   useEffect(() => {
-    if (!orderIdFromUrl || !user?.accessToken) {
+    activeOrderIdRef.current = orderIdFromUrl;
+    if (!orderIdFromUrl) {
+      setSelectedOrder(null);
+      setDetailError(null);
       return;
     }
+    setSelectedOrder((current) =>
+      current?.id === orderIdFromUrl ? current : null,
+    );
+    if (!user?.accessToken) return;
     fetchOrderDetails(orderIdFromUrl);
   }, [orderIdFromUrl, user?.accessToken, fetchOrderDetails]);
 
@@ -448,7 +530,7 @@ export function OrdersPage() {
       case "Confirmado":
         return <CheckCircle className="w-4 h-4 text-sky-800" />;
       case "Cancelado":
-        return <Clock className="w-4 h-4 text-red-700" />;
+        return <XCircle className="w-4 h-4 text-red-700" />;
       default:
         return <Clock className="w-4 h-4 text-muted-foreground" />;
     }
@@ -482,11 +564,43 @@ export function OrdersPage() {
     });
   };
 
-  if (loadingOrderDetails && !selectedOrder) {
+  if (orderIdFromUrl && !selectedOrder && detailError) {
+    return (
+      <div className="container mx-auto px-4 py-4 sm:py-8">
+        <Card className="card-static text-center py-12">
+          <CardContent>
+            <Package className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
+            <h1 className="text-lg font-semibold text-theme-primary mb-2">
+              Não foi possível abrir o pedido
+            </h1>
+            <p className="text-muted-foreground mb-6">{detailError.message}</p>
+            <div className="flex flex-col sm:flex-row gap-2 justify-center">
+              {detailError.canRetry && (
+                <Button
+                  onClick={() => fetchOrderDetails(orderIdFromUrl)}
+                  className="btn-theme-primary"
+                >
+                  Tentar de novo
+                </Button>
+              )}
+              <Button variant="outline" onClick={handleBackToOrders}>
+                Ver meus pedidos
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  if (orderIdFromUrl && !selectedOrder) {
     return (
       <div className="container mx-auto px-4 py-8">
         <div className="text-center py-12">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-theme-primary mx-auto"></div>
+          <div
+            className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"
+            aria-hidden="true"
+          ></div>
           <p className="text-muted-foreground mt-4">
             Carregando detalhes do pedido...
           </p>
@@ -525,16 +639,16 @@ export function OrdersPage() {
           <div className="lg:col-span-2">
             <Card className="card-static mb-6">
               <CardHeader className="bg-muted/60 border-b border-border">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-theme-primary">
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div className="min-w-0">
+                    <CardTitle className="text-theme-primary break-words">
                       Pedido {selectedOrder.orderNumber}
                     </CardTitle>
                     <p className="text-sm text-theme-secondary mt-1">
                       Realizado em {formatDate(selectedOrder.date)}
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                     <Badge
                       className={`${getStatusColor(selectedOrder.status)} border`}
                     >
@@ -543,7 +657,7 @@ export function OrdersPage() {
                         <span>{selectedOrder.status}</span>
                       </div>
                     </Badge>
-                    {selectedOrder.status === "Aguardando Confirmação" && (
+                    {selectedOrder.canCancel && (
                       <AlertDialog
                         open={cancelDialogOrderId === selectedOrder.id}
                         onOpenChange={(open) => {
@@ -595,43 +709,44 @@ export function OrdersPage() {
                   </div>
                 </div>
               </CardHeader>
-              <CardContent className="p-6">
+              <CardContent className="px-0 pb-0 pt-4 sm:p-6">
                 <div className="space-y-4">
                   {selectedOrder.items.map((item, index) => (
                     <div key={item.id}>
-                      <div className="flex items-center space-x-4">
+                      <div className="flex items-start gap-3 sm:gap-4">
                         <div className="flex-shrink-0 aspect-square bg-muted rounded overflow-hidden border border-border">
                           <Image
                             src={resolveCdnUrl(item.image) || "/placeholder.svg"}
                             alt={item.name}
                             width={80}
                             height={80}
-                            className="w-20 h-20 object-contain p-1"
+                            className="w-16 h-16 sm:w-20 sm:h-20 object-contain p-1"
                           />
                         </div>
-                        <div className="flex-1">
-                          <h3 className="text-label font-medium text-theme-primary">
+                        <div className="flex-1 min-w-0">
+                          <h3 className="text-label font-medium text-theme-primary break-words">
                             {item.name}
                           </h3>
-                          <div className="flex items-center justify-between mt-2">
-                            <div className="flex flex-col">
-                              <span className="text-sm text-muted-foreground">
-                                Quantidade: {item.quantity}
-                              </span>
-                              {item.pharmacyName && (
-                                <span className="text-xs sm:text-sm text-theme-secondary mt-1">
-                                  Loja: {item.pharmacyName}
-                                </span>
+                          {item.variationOption && (
+                            <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary w-fit">
+                              {item.variationOption.typeName}:{" "}
+                              {item.variationOption.optionName}
+                            </span>
+                          )}
+                          {item.pharmacyName && (
+                            <p className="text-xs sm:text-sm text-theme-secondary mt-1">
+                              Loja: {item.pharmacyName}
+                            </p>
+                          )}
+                          <div className="flex flex-wrap items-baseline justify-between gap-x-3 mt-2">
+                            <span className="text-sm text-muted-foreground whitespace-nowrap">
+                              {item.quantity} ×{" "}
+                              {formatCurrency(parseItemPrice(item.price))}
+                            </span>
+                            <span className="price text-base whitespace-nowrap">
+                              {formatCurrency(
+                                parseItemPrice(item.price) * item.quantity,
                               )}
-                              {item.variationOption && (
-                                <span className="inline-block mt-1 px-2 py-0.5 text-xs rounded-full border border-border bg-muted text-theme-primary w-fit">
-                                  {item.variationOption.typeName}:{" "}
-                                  {item.variationOption.optionName}
-                                </span>
-                              )}
-                            </div>
-                            <span className="price text-base">
-                              R$ {item.price}
                             </span>
                           </div>
                         </div>
@@ -656,6 +771,8 @@ export function OrdersPage() {
                     selectedOrder.freeShippingPromotionFee !== null
                   }
                   showFreight={selectedOrder.deliveryMethod === "delivery"}
+                  priceAdjustment={selectedOrder.priceAdjustment}
+                  total={getOrderTotal(selectedOrder)}
                 />
               </CardContent>
             </Card>
@@ -718,7 +835,7 @@ export function OrdersPage() {
                     orderId={selectedOrder.id}
                     payment={selectedOrder.pixPayment}
                     totalAmountCents={Math.round(
-                      parseFloat(selectedOrder.total) * 100,
+                      getOrderTotal(selectedOrder) * 100,
                     )}
                   />
                 )}
@@ -808,7 +925,10 @@ export function OrdersPage() {
       {loading ? (
         <Card className="card-static text-center py-12">
           <CardContent>
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-theme-primary mx-auto"></div>
+            <div
+              className="animate-spin rounded-full h-12 w-12 border-b-2 border-primary mx-auto"
+              aria-hidden="true"
+            ></div>
             <p className="text-muted-foreground mt-4">Carregando pedidos...</p>
           </CardContent>
         </Card>
@@ -817,11 +937,13 @@ export function OrdersPage() {
           <CardContent>
             <Package className="w-16 h-16 text-muted-foreground/40 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-theme-primary mb-2">
-              Erro ao carregar pedidos
+              Não foi possível carregar seus pedidos
             </h3>
-            <p className="text-muted-foreground mb-6">{error}</p>
+            <p className="text-muted-foreground mb-6">
+              Verifique sua conexão e tente de novo.
+            </p>
             <Button onClick={() => loadOrders()} className="btn-theme-primary">
-              Tentar Novamente
+              Tentar de novo
             </Button>
           </CardContent>
         </Card>
@@ -835,7 +957,9 @@ export function OrdersPage() {
             <p className="text-muted-foreground mb-6">
               Você ainda não fez nenhum pedido.
             </p>
-            <Button className="btn-theme-primary">Começar a Comprar</Button>
+            <Button asChild className="btn-theme-primary">
+              <Link href="/">Ver produtos</Link>
+            </Button>
           </CardContent>
         </Card>
       ) : (
@@ -900,10 +1024,7 @@ export function OrdersPage() {
                       )}
                     </div>
                     <div className="price text-base sm:text-lg">
-                      {formatCurrency(
-                        Number.parseFloat(order.total) ||
-                          order.productsSubtotal + order.deliveryFee,
-                      )}
+                      {formatCurrency(getOrderTotal(order))}
                     </div>
                     {order.deliveryFee > 0 && (
                       <p className="text-xs sm:text-sm text-muted-foreground mt-1">
@@ -919,7 +1040,7 @@ export function OrdersPage() {
                   </div>
                 </div>
 
-                {order.status === "Aguardando Confirmação" && (
+                {order.canCancel && (
                   <div className="mb-3 sm:mb-4">
                     <AlertDialog
                       open={cancelDialogOrderId === order.id}
@@ -993,7 +1114,7 @@ export function OrdersPage() {
                         </div>
                         <div>Qtd: {item.quantity}</div>
                         {item.variationOption && (
-                          <div className="mt-0.5 text-theme-primary/70 truncate max-w-[100px] sm:max-w-[120px]">
+                          <div className="mt-0.5 text-muted-foreground truncate max-w-[100px] sm:max-w-[120px]">
                             {item.variationOption.optionName}
                           </div>
                         )}

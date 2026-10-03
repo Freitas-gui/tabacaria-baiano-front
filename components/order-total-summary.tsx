@@ -16,6 +16,10 @@ type OrderTotalSummaryProps = {
   showFreight?: boolean;
   /** Shown instead of a price while the freight can't be known yet (e.g. no region picked). */
   freightPendingLabel?: string;
+  /** Manual adjustment set by the store on the order (negative = discount). */
+  priceAdjustment?: number;
+  /** Total already calculated by the backend; when given, it wins over the local math. */
+  total?: number;
 };
 
 /** Same math the summary displays; the backend recalculates on order creation. */
@@ -24,9 +28,13 @@ export function computeOrderTotal({
   freight,
   discountAmount = 0,
   freeShipping = false,
-}: Pick<OrderTotalSummaryProps, "productsSubtotal" | "freight" | "discountAmount" | "freeShipping">): number {
+  priceAdjustment = 0,
+}: Pick<
+  OrderTotalSummaryProps,
+  "productsSubtotal" | "freight" | "discountAmount" | "freeShipping" | "priceAdjustment"
+>): number {
   const effectiveFreight = freeShipping ? 0 : freight;
-  return Math.max(0, productsSubtotal + effectiveFreight - discountAmount);
+  return Math.max(0, productsSubtotal + priceAdjustment + effectiveFreight - discountAmount);
 }
 
 export function OrderTotalSummary({
@@ -40,8 +48,12 @@ export function OrderTotalSummary({
   freeShippingRemaining,
   showFreight = true,
   freightPendingLabel,
+  priceAdjustment = 0,
+  total: totalFromServer,
 }: OrderTotalSummaryProps) {
-  const total = computeOrderTotal({ productsSubtotal, freight, discountAmount, freeShipping });
+  const total =
+    totalFromServer ??
+    computeOrderTotal({ productsSubtotal, freight, discountAmount, freeShipping, priceAdjustment });
 
   return (
     <div className={compact ? "space-y-2" : "space-y-3"}>
@@ -83,6 +95,19 @@ export function OrderTotalSummary({
         <p className="text-xs sm:text-sm text-green-600">
           Faltam {formatCurrency(freeShippingRemaining)} para ganhar frete grátis.
         </p>
+      )}
+      {priceAdjustment !== 0 && (
+        <div className="flex justify-between items-center text-sm sm:text-base">
+          <span className="text-muted-foreground">Ajuste da loja</span>
+          <span
+            className={`text-label font-medium ${
+              priceAdjustment < 0 ? "text-green-600" : "text-theme-primary"
+            }`}
+          >
+            {priceAdjustment < 0 ? "-" : "+"}
+            {formatCurrency(Math.abs(priceAdjustment))}
+          </span>
+        </div>
       )}
       {discountAmount > 0 && (
         <div className="flex justify-between items-center text-sm sm:text-base">

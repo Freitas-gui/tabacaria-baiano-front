@@ -26,20 +26,23 @@ export function PixPaymentPanel({
   paidClickLabel = "Já paguei — ver meus pedidos",
 }: PixPaymentPanelProps) {
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   const expiresLabel = formatPixExpiresAt(payment.expiresAt);
 
   const copyPixCode = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(payment.brCode);
+      setCopyFailed(false);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
-      alert("Não foi possível copiar o código. Copie manualmente.");
+      setCopyFailed(true);
     }
   }, [payment.brCode]);
 
   useEffect(() => {
     setCopied(false);
+    setCopyFailed(false);
   }, [payment.brCode]);
 
   return (
@@ -79,7 +82,7 @@ export function PixPaymentPanel({
         <p className="text-sm text-muted-foreground">
           Ou copie o código PIX copia e cola
         </p>
-        <p className="text-xs break-all bg-muted rounded-md p-3 text-left font-mono max-h-24 overflow-y-auto">
+        <p className="text-xs break-all bg-muted rounded-md p-3 text-left font-mono max-h-24 overflow-y-auto select-all">
           {payment.brCode}
         </p>
         <Button
@@ -100,6 +103,12 @@ export function PixPaymentPanel({
             </>
           )}
         </Button>
+        {copyFailed && (
+          <p className="text-sm text-red-700" role="alert">
+            Não foi possível copiar automaticamente. Toque no código acima,
+            selecione tudo e copie.
+          </p>
+        )}
       </div>
 
       {onPaidClick && (

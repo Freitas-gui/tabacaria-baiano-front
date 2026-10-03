@@ -137,10 +137,11 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  const logout = () => {
+  // Stable identity: pages list it as an effect dependency.
+  const logout = useCallback(() => {
     setUser(null)
     localStorage.removeItem("user")
-  }
+  }, [])
 
   const persistUser = useCallback((userData: User) => {
     setUser(userData)
