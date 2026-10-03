@@ -832,11 +832,10 @@ export function OrdersPage() {
                 )}
                 {selectedOrder.pixPayment && (
                   <PixPaymentPanel
-                    orderId={selectedOrder.id}
                     payment={selectedOrder.pixPayment}
-                    totalAmountCents={Math.round(
-                      getOrderTotal(selectedOrder) * 100,
-                    )}
+                    totalAmount={getOrderTotal(selectedOrder)}
+                    orderCode={selectedOrder.orderNumber}
+                    helpUrl={buildWhatsAppTrackingUrl(selectedOrder)}
                   />
                 )}
               </CardContent>

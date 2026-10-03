@@ -59,7 +59,7 @@ export function OrderTotalSummary({
     <div className={compact ? "space-y-2" : "space-y-3"}>
       <div className="flex justify-between items-center text-sm sm:text-base">
         <span className="text-muted-foreground">Subtotal dos produtos</span>
-        <span className="text-label font-medium text-theme-primary">
+        <span className="text-sm font-semibold text-theme-primary">
           {formatCurrency(productsSubtotal)}
         </span>
       </div>
@@ -69,7 +69,7 @@ export function OrderTotalSummary({
             Frete
             {selectedRegionName ? ` (${selectedRegionName})` : ""}
           </span>
-          <span className="text-label font-medium text-theme-primary">
+          <span className="text-sm font-semibold text-theme-primary">
             {freeShipping && freight > 0 ? (
               <>
                 <span className="line-through text-muted-foreground mr-1">
@@ -92,7 +92,7 @@ export function OrderTotalSummary({
         </div>
       )}
       {showFreight && freeShippingRemaining !== undefined && freeShippingRemaining > 0 && (
-        <p className="text-xs sm:text-sm text-green-600">
+        <p className="text-xs sm:text-sm text-emerald-700">
           Faltam {formatCurrency(freeShippingRemaining)} para ganhar frete grátis.
         </p>
       )}
@@ -100,8 +100,8 @@ export function OrderTotalSummary({
         <div className="flex justify-between items-center text-sm sm:text-base">
           <span className="text-muted-foreground">Ajuste da loja</span>
           <span
-            className={`text-label font-medium ${
-              priceAdjustment < 0 ? "text-green-600" : "text-theme-primary"
+            className={`text-sm font-semibold ${
+              priceAdjustment < 0 ? "text-emerald-700" : "text-theme-primary"
             }`}
           >
             {priceAdjustment < 0 ? "-" : "+"}
@@ -114,7 +114,7 @@ export function OrderTotalSummary({
           <span className="text-muted-foreground">
             Desconto{discountCode ? ` (${discountCode})` : ""}
           </span>
-          <span className="text-label font-medium text-green-600">
+          <span className="text-sm font-semibold text-emerald-700">
             -{formatCurrency(discountAmount)}
           </span>
         </div>
