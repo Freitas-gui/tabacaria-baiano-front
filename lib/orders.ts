@@ -263,3 +263,97 @@ export function withStoredPix(
   }
   return { ...order, pixPayment: stored };
 }
+
+// ---------------------------------------------------------------------------
+// Formatting
+// ---------------------------------------------------------------------------
+
+const DATE_TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", {
+  day: "numeric",
+  month: "short",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+const DAY_MONTH_FORMAT = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" });
+const TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
+
+function parseDate(iso: string | null | undefined): Date | null {
+  if (!iso) return null;
+  const date = new Date(iso);
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/** "3 de out. de 2026, 13:10" */
+export function formatOrderDate(iso: string | null | undefined): string {
+  const date = parseDate(iso);
+  return date ? DATE_TIME_FORMAT.format(date) : "";
+}
+
+/** "3 de out. · 13:10" */
+export function formatOrderDateShort(iso: string | null | undefined): string {
+  const date = parseDate(iso);
+  return date ? `${DAY_MONTH_FORMAT.format(date)} · ${TIME_FORMAT.format(date)}` : "";
+}
+
+/** "3 de out., 13:22" */
+export function formatPaidAt(iso: string | null | undefined): string {
+  const date = parseDate(iso);
+  return date ? `${DAY_MONTH_FORMAT.format(date)}, ${TIME_FORMAT.format(date)}` : "";
+}
+
+/** Milliseconds until `expiresAt` (negative once past); null when there is no usable date. */
+export function getRemainingMs(expiresAt: string | null | undefined, now: number): number | null {
+  const date = parseDate(expiresAt);
+  return date ? date.getTime() - now : null;
+}
+
+/** "46:12" under an hour, "1h05" above; null once the time is up. */
+export function formatCountdown(ms: number): string | null {
+  if (ms <= 0) return null;
+  const totalSeconds = Math.ceil(ms / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours > 0) return `${hours}h${String(minutes).padStart(2, "0")}`;
+  return `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/** "46 min", "1 h 5 min", "menos de 1 min"; null once the time is up. */
+export function formatRemainingMinutes(ms: number): string | null {
+  if (ms <= 0) return null;
+  const totalMinutes = Math.floor(ms / 60_000);
+  if (totalMinutes < 1) return "menos de 1 min";
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours === 0) return `${minutes} min`;
+  return minutes === 0 ? `${hours} h` : `${hours} h ${minutes} min`;
+}
+
+export function formatCep(raw: string): string {
+  const digits = raw.replace(/\D/g, "");
+  return digits.length === 8 ? `${digits.slice(0, 5)}-${digits.slice(5)}` : raw;
+}
+
+function streetLine(address: OrderAddress): string {
+  return address.number ? `${address.street}, ${address.number}` : address.street;
+}
+
+function areaLine(address: OrderAddress, citySeparator: string): string {
+  const place = [address.city, address.state].filter(Boolean).join(citySeparator);
+  return [address.district, place].filter(Boolean).join(", ");
+}
+
+/** Up to three lines: street (+ complement), area, CEP. */
+export function formatAddressLines(address: OrderAddress): string[] {
+  return [
+    [streetLine(address), address.details].filter(Boolean).join(" · "),
+    areaLine(address, " – "),
+    address.postalCode ? `CEP ${formatCep(address.postalCode)}` : "",
+  ].filter(Boolean);
+}
+
+/** "Avenida dos Navegantes, 1234 - Centro, Porto Seguro - BA" */
+export function formatAddressInline(address: OrderAddress): string {
+  return [streetLine(address), areaLine(address, " - ")].filter(Boolean).join(" - ");
+}
