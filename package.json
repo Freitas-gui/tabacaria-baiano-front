@@ -6,7 +6,8 @@
     "build": "next build",
     "dev": "next dev",
     "lint": "next lint",
-    "start": "next start"
+    "start": "next start",
+    "test": "TZ=America/Bahia pnpm dlx tsx@4.23.15 --test lib/*.test.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
