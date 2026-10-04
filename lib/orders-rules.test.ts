@@ -9,6 +9,7 @@ import {
   getPaymentSummary,
   getStatusBadge,
   getTimelineSteps,
+  getWhatsAppIntro,
   groupOrders,
   hasMultipleStores,
   isActiveOrder,
@@ -157,7 +158,7 @@ test("buildWhatsAppHelpUrl prefills the store chat with the order", () => {
   assert.equal(url.origin + url.pathname, "https://api.whatsapp.com/send");
   assert.equal(url.searchParams.get("phone"), "5573991000465");
   const text = url.searchParams.get("text") ?? "";
-  assert.ok(text.startsWith("Salve tropa do baiano, gostaria de falar sobre meu pedido."));
+  assert.ok(text.startsWith("Salve tropa do baiano! Meu pedido foi confirmado. Qual a previsão de entrega?\n"));
   assert.ok(text.includes("Pedido: #1002ab3k9z"));
   assert.ok(text.includes("Status: Confirmado"));
   assert.ok(text.includes("* 2x Seda Smoking Brown"));
@@ -166,4 +167,29 @@ test("buildWhatsAppHelpUrl prefills the store chat with the order", () => {
 
   const pickupText = new URL(buildWhatsAppHelpUrl(order({ delivery_method: "pickup", address: null }))).searchParams.get("text") ?? "";
   assert.ok(pickupText.includes("📍Retirada na loja"));
+});
+
+test("getWhatsAppIntro asks what the customer needs at each status", () => {
+  const G = "Salve tropa do baiano!";
+  const cases: [Partial<ApiOrder>, string][] = [
+    [PENDING_PIX, `${G} Fiz um pedido e queria ajuda com o pagamento do PIX.`],
+    [{ ...PENDING_PIX, payment_expires_at: "2026-10-01T00:00:00Z" }, `${G} O prazo do PIX do meu pedido acabou. Ainda consigo pagar?`],
+    [{ status: "waiting_confirmation", payment_status: null }, `${G} Fiz um pedido e queria saber se ele já foi confirmado.`],
+    [{ status: "confirmed" }, `${G} Meu pedido foi confirmado. Qual a previsão de entrega?`],
+    [{ status: "confirmed", delivery_method: "pickup" }, `${G} Meu pedido foi confirmado. Quando posso retirar na loja?`],
+    [{ status: "confirmed", delivery_method: "shipping" }, `${G} Meu pedido foi confirmado. Quando ele vai ser enviado?`],
+    [{ status: "out_for_delivery" }, `${G} Meu pedido saiu para entrega. Qual a previsão de chegada?`],
+    [{ status: "out_for_delivery", delivery_method: "shipping" }, `${G} Meu pedido foi enviado. Vocês podem me passar o código de rastreio?`],
+    [{ status: "out_for_delivery", delivery_method: "pickup" }, `${G} Meu pedido foi confirmado. Quando posso retirar na loja?`],
+    [{ status: "delivered" }, `${G} Recebi meu pedido e queria falar sobre ele.`],
+    [{ status: "delivered", delivery_method: "pickup" }, `${G} Retirei meu pedido e queria falar sobre ele.`],
+    [{ status: "canceled", payment_status: "paid" }, `${G} Meu pedido foi cancelado depois que paguei. Como fica o estorno?`],
+    [{ status: "canceled", payment_status: "refunded" }, `${G} Meu pedido foi cancelado e estornado. Queria tirar uma dúvida.`],
+    [{ status: "canceled", payment_status: "expired" }, `${G} Meu pedido foi cancelado porque o prazo do PIX acabou. Queria ajuda com ele.`],
+    [{ status: "canceled", payment_status: "pending" }, `${G} Meu pedido foi cancelado e queria entender o que aconteceu.`],
+    [{ status: "preparing" }, `${G} Gostaria de acompanhar meu pedido.`],
+  ];
+  for (const [overrides, intro] of cases) {
+    assert.equal(getWhatsAppIntro(order(overrides), NOW), intro, JSON.stringify(overrides));
+  }
 });

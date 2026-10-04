@@ -534,6 +534,53 @@ export function getPaymentSummary(
   return status ? `${method} · ${status}` : method;
 }
 
+const WHATSAPP_GREETING = "Salve tropa do baiano!";
+
+/** First line of the WhatsApp message: what the customer most likely needs at this status. */
+export function getWhatsAppIntro(
+  order: Pick<CustomerOrder, "status" | "paymentStatus" | "deliveryMethod" | "pixPayment">,
+  now = Date.now(),
+): string {
+  const ask = (text: string) => `${WHATSAPP_GREETING} ${text}`;
+  const confirmed = {
+    delivery: "Meu pedido foi confirmado. Qual a previsão de entrega?",
+    pickup: "Meu pedido foi confirmado. Quando posso retirar na loja?",
+    shipping: "Meu pedido foi confirmado. Quando ele vai ser enviado?",
+  } as const;
+
+  switch (order.status) {
+    case "waiting_confirmation":
+      if (order.paymentStatus !== "pending") return ask("Fiz um pedido e queria saber se ele já foi confirmado.");
+      return isPixExpired(order, now)
+        ? ask("O prazo do PIX do meu pedido acabou. Ainda consigo pagar?")
+        : ask("Fiz um pedido e queria ajuda com o pagamento do PIX.");
+    case "confirmed":
+      return ask(confirmed[order.deliveryMethod]);
+    case "out_for_delivery":
+      if (order.deliveryMethod === "pickup") return ask(confirmed.pickup);
+      return order.deliveryMethod === "shipping"
+        ? ask("Meu pedido foi enviado. Vocês podem me passar o código de rastreio?")
+        : ask("Meu pedido saiu para entrega. Qual a previsão de chegada?");
+    case "delivered":
+      return order.deliveryMethod === "pickup"
+        ? ask("Retirei meu pedido e queria falar sobre ele.")
+        : ask("Recebi meu pedido e queria falar sobre ele.");
+    case "canceled":
+      switch (order.paymentStatus) {
+        case "paid":
+          return ask("Meu pedido foi cancelado depois que paguei. Como fica o estorno?");
+        case "refunded":
+          return ask("Meu pedido foi cancelado e estornado. Queria tirar uma dúvida.");
+        case "expired":
+          return ask("Meu pedido foi cancelado porque o prazo do PIX acabou. Queria ajuda com ele.");
+        default:
+          return ask("Meu pedido foi cancelado e queria entender o que aconteceu.");
+      }
+    default:
+      return ask("Gostaria de acompanhar meu pedido.");
+  }
+}
+
 export function buildWhatsAppHelpUrl(order: CustomerOrder): string {
   const itemsList = order.items.map((item) => `* ${item.quantity}x ${item.name}`).join("\n");
   const whereLine =
@@ -542,7 +589,7 @@ export function buildWhatsAppHelpUrl(order: CustomerOrder): string {
       : `📍Endereço de entrega: ${order.address ? formatAddressInline(order.address) : "não informado"}`;
 
   const message = [
-    "Salve tropa do baiano, gostaria de falar sobre meu pedido.",
+    getWhatsAppIntro(order),
     "",
     `Pedido: #${order.code}`,
     `Status: ${getStatusBadge(order).label}`,
