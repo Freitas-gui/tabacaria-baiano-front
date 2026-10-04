@@ -19,6 +19,7 @@ import {
   productMatchesLeaf,
 } from "@/lib/categories";
 import { getProductPath } from "@/lib/product-slug";
+import { getProductListTitle } from "@/lib/product-list-title";
 
 type ProductVariation = {
   typeName: string;
@@ -269,13 +270,6 @@ export function HomepageContent() {
     router.push(getProductPath(product));
   };
 
-  const getDisplayTitle = () =>
-    searchQuery
-      ? `Resultados da busca: "${searchQuery}" (${filteredProducts.length} produtos encontrados)`
-      : filterLabel
-        ? `Produtos: ${filterLabel} (${filteredProducts.length} produtos)`
-        : `Produtos: Todos (${filteredProducts.length} produtos)`;
-
   return (
     <div className="container mx-auto px-4 py-4 sm:py-8">
       <BannerCarousel />
@@ -375,7 +369,7 @@ export function HomepageContent() {
       <div>
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between mb-4 sm:mb-6 gap-2 sm:gap-0">
           <h2 className="text-lg sm:text-xl font-semibold text-theme-primary break-words">
-            {getDisplayTitle()}
+            {getProductListTitle({ searchQuery, filterLabel, count: filteredProducts.length })}
           </h2>
           {(selectedCategory || selectedParentId || searchQuery) && (
             <Button
