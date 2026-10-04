@@ -30,11 +30,14 @@ export function OrderListCard({ order }: { order: CustomerOrder }) {
       )}
     >
       <div className="flex flex-wrap items-start justify-between gap-x-3 gap-y-1.5">
-        <h3 className="text-sm font-semibold text-theme-primary">Pedido {order.code}</h3>
+        {/* Customers tell orders apart by date and items; the code stays small at the bottom. */}
+        <h3 className="text-sm font-semibold text-theme-primary">
+          {formatOrderDateShort(order.createdAt)}
+        </h3>
         <OrderStatusBadge badge={getStatusBadge(order)} />
       </div>
-      <p className="mt-1 text-label text-muted-foreground">
-        {formatOrderDateShort(order.createdAt)} · {getDeliveryMethodLabel(order.deliveryMethod)}
+      <p className="mt-0.5 text-label text-muted-foreground">
+        {getDeliveryMethodLabel(order.deliveryMethod)}
       </p>
 
       {first && (
@@ -67,7 +70,7 @@ export function OrderListCard({ order }: { order: CustomerOrder }) {
 
       {awaitingPix && (
         <div className="mt-3 flex items-center justify-between gap-3 rounded-lg bg-amber-50 px-3 py-2 text-label text-amber-900">
-          <span>Pague o PIX{remaining ? ` · expira em ${remaining}` : ""}</span>
+          <span>Pague o PIX{remaining ? `: expira em ${remaining}` : ""}</span>
           <span className="inline-flex shrink-0 items-center font-semibold">
             Pagar
             <ChevronRight className="h-4 w-4" aria-hidden="true" />
@@ -75,9 +78,12 @@ export function OrderListCard({ order }: { order: CustomerOrder }) {
         </div>
       )}
 
-      <div className="mt-3 flex items-center justify-between">
+      <div className="mt-3 flex items-center justify-between gap-3">
         <span className="price text-sm">{formatCurrency(order.total)}</span>
-        <ChevronRight className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+        <span className="inline-flex min-w-0 items-center gap-0.5 text-xs text-muted-foreground">
+          <span className="truncate">Pedido nº {order.code}</span>
+          <ChevronRight className="h-5 w-5 shrink-0" aria-hidden="true" />
+        </span>
       </div>
     </Link>
   );

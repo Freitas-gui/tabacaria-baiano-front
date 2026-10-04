@@ -270,14 +270,12 @@ export function withStoredPix(
 // Formatting
 // ---------------------------------------------------------------------------
 
-const DATE_TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", {
+const DAY_MONTH_FORMAT = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" });
+const DAY_MONTH_YEAR_FORMAT = new Intl.DateTimeFormat("pt-BR", {
   day: "numeric",
   month: "short",
   year: "numeric",
-  hour: "2-digit",
-  minute: "2-digit",
 });
-const DAY_MONTH_FORMAT = new Intl.DateTimeFormat("pt-BR", { day: "numeric", month: "short" });
 const TIME_FORMAT = new Intl.DateTimeFormat("pt-BR", { hour: "2-digit", minute: "2-digit" });
 
 function parseDate(iso: string | null | undefined): Date | null {
@@ -286,22 +284,21 @@ function parseDate(iso: string | null | undefined): Date | null {
   return Number.isNaN(date.getTime()) ? null : date;
 }
 
-/** "3 de out. de 2026, 13:10" */
+/** "3 de out. de 2026 às 13:10" */
 export function formatOrderDate(iso: string | null | undefined): string {
   const date = parseDate(iso);
-  return date ? DATE_TIME_FORMAT.format(date) : "";
+  return date ? `${DAY_MONTH_YEAR_FORMAT.format(date)} às ${TIME_FORMAT.format(date)}` : "";
 }
 
-/** "3 de out. · 13:10" */
-export function formatOrderDateShort(iso: string | null | undefined): string {
+/** "3 de out., 13:10"; the year is added outside the current one ("12 de set. de 2025, 07:05"). */
+export function formatOrderDateShort(iso: string | null | undefined, now = Date.now()): string {
   const date = parseDate(iso);
-  return date ? `${DAY_MONTH_FORMAT.format(date)} · ${TIME_FORMAT.format(date)}` : "";
-}
-
-/** "3 de out., 13:22" */
-export function formatPaidAt(iso: string | null | undefined): string {
-  const date = parseDate(iso);
-  return date ? `${DAY_MONTH_FORMAT.format(date)}, ${TIME_FORMAT.format(date)}` : "";
+  if (!date) return "";
+  const day =
+    date.getFullYear() === new Date(now).getFullYear()
+      ? DAY_MONTH_FORMAT.format(date)
+      : DAY_MONTH_YEAR_FORMAT.format(date);
+  return `${day}, ${TIME_FORMAT.format(date)}`;
 }
 
 /** Milliseconds until `expiresAt` (negative once past); null when there is no usable date. */
@@ -507,7 +504,7 @@ function paymentStatusText(
 ): string | null {
   switch (order.paymentStatus) {
     case "paid": {
-      const when = formatPaidAt(order.paidAt);
+      const when = formatOrderDateShort(order.paidAt, now);
       return when ? `pago em ${when}` : "pago";
     }
     case "pending":

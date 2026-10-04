@@ -7,7 +7,6 @@ import {
   formatCountdown,
   formatOrderDate,
   formatOrderDateShort,
-  formatPaidAt,
   formatRemainingMinutes,
   getRemainingMs,
   type OrderAddress,
@@ -16,16 +15,20 @@ import {
 // `pnpm test` runs with TZ=America/Bahia (UTC-3).
 const ISO = "2026-10-03T16:10:00.000000Z";
 
+const NOW_2026 = Date.parse("2026-10-04T12:00:00Z");
+
 test("order dates use pt-BR short months and local time", () => {
-  assert.equal(formatOrderDate(ISO), "3 de out. de 2026, 13:10");
-  assert.equal(formatOrderDateShort(ISO), "3 de out. · 13:10");
-  assert.equal(formatPaidAt("2026-10-03T16:22:00+00:00"), "3 de out., 13:22");
+  assert.equal(formatOrderDate(ISO), "3 de out. de 2026 às 13:10");
+  assert.equal(formatOrderDateShort(ISO, NOW_2026), "3 de out., 13:10");
+});
+
+test("short dates add the year only outside the current year", () => {
+  assert.equal(formatOrderDateShort("2025-09-12T10:05:00Z", NOW_2026), "12 de set. de 2025, 07:05");
 });
 
 test("invalid or missing dates format as empty strings", () => {
   assert.equal(formatOrderDate("not a date"), "");
   assert.equal(formatOrderDateShort(null), "");
-  assert.equal(formatPaidAt(undefined), "");
 });
 
 test("getRemainingMs measures time left and ignores missing or invalid dates", () => {

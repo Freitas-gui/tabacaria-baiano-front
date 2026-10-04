@@ -102,7 +102,7 @@ function OrderGroups({ orders }: { orders: CustomerOrder[] }) {
 function OrderGroup({ id, title, orders }: { id: string; title: string; orders: CustomerOrder[] }) {
   return (
     <section aria-labelledby={id}>
-      <h2 id={id} className="mb-2 text-label font-semibold uppercase tracking-wide text-muted-foreground">
+      <h2 id={id} className="mb-2 text-base font-semibold text-theme-primary">
         {title}
       </h2>
       <ul className="space-y-3">

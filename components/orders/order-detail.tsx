@@ -152,14 +152,14 @@ export function OrderDetail({ orderId, token, onUnauthorized }: OrderDetailProps
           Meus pedidos
         </Link>
 
+        {/* The code only matters when talking to the store (the WhatsApp message
+            already carries it), so it sits in the quiet meta line, not the title. */}
         <header className="mb-4 mt-1 sm:mb-6">
-          <h1 className="break-words text-2xl font-bold text-theme-primary sm:text-3xl">
-            Pedido {order.code}
-          </h1>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1.5">
-            <p className="text-label text-muted-foreground">{formatOrderDate(order.createdAt)}</p>
-            <OrderStatusBadge badge={getStatusBadge(order)} />
-          </div>
+          <h1 className="text-2xl font-bold text-theme-primary sm:text-3xl">Detalhes do pedido</h1>
+          <p className="mt-1 break-words text-label text-muted-foreground">
+            Pedido nº {order.code}, feito em {formatOrderDate(order.createdAt)}
+          </p>
+          <OrderStatusBadge badge={getStatusBadge(order)} className="mt-2" />
         </header>
 
         <div role="status">
